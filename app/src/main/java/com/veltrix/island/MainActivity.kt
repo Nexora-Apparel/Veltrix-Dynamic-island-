@@ -48,6 +48,8 @@ private fun Setup() {
     }
     var cfg by remember { mutableStateOf(Prefs.readConfig(ctx)) }
     var allowed by remember { mutableStateOf(Prefs.allowed(ctx)) }
+    var notificationDuration by remember { mutableIntStateOf(Prefs.notificationDuration(ctx)) }
+    LaunchedEffect(notificationDuration) { Prefs.setNotificationDuration(ctx, notificationDuration) }
     var askDialog by remember { mutableStateOf(!Prefs.asked(ctx) && !listenerOk) }
     val screenW = LocalConfiguration.current.screenWidthDp
 
@@ -116,7 +118,19 @@ private fun Setup() {
         item { Slide("Width ${cfg.widthDp}dp", cfg.widthDp, 20..220) { save(cfg.copy(widthDp = it)) } }
         item { Slide("Height ${cfg.heightDp}dp", cfg.heightDp, 16..60) { save(cfg.copy(heightDp = it)) } }
 
+        item { Text("Notification display duration", style = MaterialTheme.typography.titleMedium) }
+        item { Text("Choose how long each notification stays expanded before the island returns to normal.") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(10, 30, 60).forEach { seconds ->
+                    if (notificationDuration == seconds) Button(onClick = { notificationDuration = seconds }, modifier = Modifier.weight(1f)) { Text("${seconds}s") }
+                    else OutlinedButton(onClick = { notificationDuration = seconds }, modifier = Modifier.weight(1f)) { Text("${seconds}s") }
+                }
+            }
+        }
+
         item { Text("Apps shown in the island", style = MaterialTheme.typography.titleMedium) }
+        item { Text("Turn on every app whose notifications or app icon you want to see here. Music playback is detected separately when the app exposes an Android media session.") }
         items(apps, key = { it.first }) { (pkg, label) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(label, Modifier.weight(1f))

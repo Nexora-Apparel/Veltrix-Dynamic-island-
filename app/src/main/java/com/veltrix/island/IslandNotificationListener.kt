@@ -20,6 +20,9 @@ class IslandNotificationListener : NotificationListenerService() {
         if (!IslandState.flow.value.screenOn) return
         if (sbn.isOngoing || sbn.packageName !in Prefs.allowed(this)) return
         val n = sbn.notification
+        // Never dismiss call notifications: Android's native incoming-call UI
+        // and call actions must remain available while the island mirrors calls.
+        if (n.category == Notification.CATEGORY_CALL) return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return
         val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
@@ -27,8 +30,6 @@ class IslandNotificationListener : NotificationListenerService() {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         } catch (e: Exception) { sbn.packageName }
 
-        // Capture first so the island can show the alert, then dismiss the
-        // matching system notification to avoid duplicate notification UI.
         IslandState.showNotification(IslandNotification(sbn.key, label, title, text))
         dismissedByIsland.add(sbn.key)
         try {

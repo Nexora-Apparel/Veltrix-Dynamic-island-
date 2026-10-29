@@ -40,7 +40,7 @@ jobs:
             echo "Stable signing secrets are not configured. APK artifact built, but no update release was published."
           fi
       - name: Build release APK
-        if: steps.signing.outputs.configured == 'true'
+        if: github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true'
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/veltrix-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEYSTORE_PASSWORD }}
@@ -51,7 +51,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
           "$APKSIGNER" sign --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out app/build/outputs/apk/release/VeltrixIsland.apk app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Publish in-app update release
-        if: steps.signing.outputs.configured == 'true'
+        if: github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest

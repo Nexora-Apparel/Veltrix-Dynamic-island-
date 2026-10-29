@@ -3,10 +3,16 @@ package com.veltrix.island
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import java.util.concurrent.ConcurrentHashMap
 
 /** Bound by Android only when notification access is granted. */
 class IslandNotificationListener : NotificationListenerService() {
+    // Keep the island visible when Android reports removal of a notification
+    // that this service dismissed after successfully capturing it.
+    private val dismissedByIsland = ConcurrentHashMap.newKeySet<String>()
+
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (dismissedByIsland.remove(sbn.key)) return
         IslandState.clearNotification(sbn.key)
     }
 
@@ -20,6 +26,17 @@ class IslandNotificationListener : NotificationListenerService() {
         val label = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         } catch (e: Exception) { sbn.packageName }
+
+        // Capture first so the island can show the alert, then dismiss the
+        // matching system notification to avoid duplicate notification UI.
         IslandState.showNotification(IslandNotification(sbn.key, label, title, text))
+        dismissedByIsland.add(sbn.key)
+        try {
+            cancelNotification(sbn.key)
+        } catch (e: SecurityException) {
+            dismissedByIsland.remove(sbn.key)
+        } catch (e: IllegalArgumentException) {
+            dismissedByIsland.remove(sbn.key)
+        }
     }
 }

@@ -11,12 +11,15 @@ data class IslandConfig(
     val heightDp: Int = 32
 )
 data class IslandNotification(val key: String, val app: String, val title: String, val text: String)
+data class IslandCall(val state: CallState, val number: String? = null, val startedAtMillis: Long = 0L)
+enum class CallState { RINGING, ACTIVE }
 data class IslandUiState(
     val level: Int = 100,
     val charging: Boolean = false,
     val screenOn: Boolean = true,
     val unlockTick: Int = 0,
     val notification: IslandNotification? = null,
+    val call: IslandCall? = null,
     val config: IslandConfig = IslandConfig()
 )
 object IslandState {
@@ -24,6 +27,8 @@ object IslandState {
     fun showNotification(n: IslandNotification) = flow.update { it.copy(notification = n) }
     fun clearNotification(key: String) =
         flow.update { if (it.notification?.key == key) it.copy(notification = null) else it }
+    fun showCall(call: IslandCall) = flow.update { it.copy(call = call, notification = null) }
+    fun clearCall() = flow.update { it.copy(call = null) }
 }
 object Prefs {
     fun sp(c: Context) = c.applicationContext.getSharedPreferences("island", Context.MODE_PRIVATE)

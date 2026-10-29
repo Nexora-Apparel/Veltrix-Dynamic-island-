@@ -105,7 +105,7 @@ fun IslandRoot() {
             .clickable(remember { MutableInteractionSource() }, indication = null) { expanded = !expanded }
         ) {
             when {
-                expanded && media != null -> {
+                expanded && media != null && note == null -> {
                     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(media.packageName, 28.dp)
@@ -159,7 +159,7 @@ fun IslandRoot() {
                         }
                     }
                 }
-                !expanded && media != null -> {
+                !expanded && media != null && note == null -> {
                     Row(Modifier.fillMaxSize().padding(horizontal = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(media.packageName, 22.dp)
                         Spacer(Modifier.width(8.dp))

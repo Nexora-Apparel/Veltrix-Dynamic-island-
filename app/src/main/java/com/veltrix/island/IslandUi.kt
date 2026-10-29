@@ -46,7 +46,7 @@ fun IslandRoot() {
         }
     }
     val dot = when {
-        s.level in 0..30 -> Red
+        s.level in 0..39 -> Red
         s.level in 40..100 -> Green
         else -> null
     }

@@ -39,17 +39,56 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "Stable signing secrets are not configured. APK artifact built, but no update release was published."
           fi
-      - name: Build release APK
+      - name: Build, verify, and fingerprint release APK
+        id: release_apk
         if: github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true'
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/veltrix-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+        shell: bash
         run: |
+          set -euo pipefail
           gradle :app:assembleRelease
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
-          "$APKSIGNER" sign --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out app/build/outputs/apk/release/VeltrixIsland.apk app/build/outputs/apk/release/app-release-unsigned.apk
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -n 1)"
+          APK="app/build/outputs/apk/release/VeltrixIsland.apk"
+          "$APKSIGNER" sign --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$APK" app/build/outputs/apk/release/app-release-unsigned.apk
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
+          FINGERPRINT="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-signature.txt" | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [[ ! "$FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not read the APK signing certificate SHA-256 fingerprint."
+            exit 1
+          fi
+
+          BADGING="$("$AAPT" dump badging "$APK")"
+          PACKAGE_NAME="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+          APK_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" | head -n 1)"
+          if [[ "$PACKAGE_NAME" != "com.veltrix.island" ]]; then
+            echo "::error::Unexpected APK package ID: $PACKAGE_NAME"
+            exit 1
+          fi
+          if [[ "$APK_VERSION_CODE" != "$GITHUB_RUN_NUMBER" ]]; then
+            echo "::error::APK versionCode $APK_VERSION_CODE does not match workflow run $GITHUB_RUN_NUMBER"
+            exit 1
+          fi
+
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          echo "Verified package=$PACKAGE_NAME versionCode=$APK_VERSION_CODE signingCertSha256=$FINGERPRINT"
+
+          # If a prior release has a recorded certificate, block publication if the key changed.
+          PREVIOUS_BODY="$(curl --fail --silent --show-error -H 'Accept: application/vnd.github+json' -H 'User-Agent: Veltrix-Island-Release-Check' "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/latest" | jq -r '.body // ""')"
+          PREVIOUS_FINGERPRINT="$(printf '%s\n' "$PREVIOUS_BODY" | sed -n 's/^signingCertSha256=\([0-9a-fA-F]*\)$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          if [[ -n "$PREVIOUS_FINGERPRINT" && "$PREVIOUS_FINGERPRINT" != "$FINGERPRINT" ]]; then
+            echo "::error::Release signing certificate changed. Refusing to publish an APK that may not update existing installations."
+            echo "::error::Previous fingerprint: $PREVIOUS_FINGERPRINT"
+            echo "::error::Current fingerprint:  $FINGERPRINT"
+            exit 1
+          elif [[ -z "$PREVIOUS_FINGERPRINT" ]]; then
+            echo "::warning::The existing release has no recorded signing fingerprint. This run initializes fingerprint tracking; it cannot prove compatibility with older installed APKs."
+          fi
       - name: Publish in-app update release
         if: github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true'
         uses: softprops/action-gh-release@v2
@@ -60,6 +99,7 @@ jobs:
           body: |
             In-app update for Veltrix Island.
             versionCode=${{ github.run_number }}
+            signingCertSha256=${{ steps.release_apk.outputs.fingerprint }}
           files: app/build/outputs/apk/release/VeltrixIsland.apk
           overwrite_files: true
           make_latest: true

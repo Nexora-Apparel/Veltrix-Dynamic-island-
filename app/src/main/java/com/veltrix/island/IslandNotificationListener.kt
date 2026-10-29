@@ -6,6 +6,10 @@ import android.service.notification.StatusBarNotification
 
 /** Bound by Android only when notification access is granted. */
 class IslandNotificationListener : NotificationListenerService() {
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        IslandState.clearNotification(sbn.key)
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (!IslandState.flow.value.screenOn) return
         if (sbn.isOngoing || sbn.packageName !in Prefs.allowed(this)) return

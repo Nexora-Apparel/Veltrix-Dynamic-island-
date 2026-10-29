@@ -23,14 +23,38 @@ class IslandNotificationListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (dismissedByIsland.remove(sbn.key)) return
         IslandState.clearNotification(sbn.key)
+        if (sbn.packageName == "com.whatsapp" && IslandState.flow.value.call?.packageName == "com.whatsapp") {
+            IslandState.clearCall()
+            CallActions.endCall = null
+        }
         if (controllers.containsKey(sbn.packageName)) refreshMedia(sbn.packageName)
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         handleMediaNotification(sbn)
         if (!IslandState.flow.value.screenOn) return
-        if (sbn.isOngoing || sbn.packageName !in Prefs.allowed(this)) return
         val n = sbn.notification
+        if (sbn.packageName == "com.whatsapp" &&
+            (n.category == Notification.CATEGORY_CALL ||
+                (sbn.isOngoing && ((n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() + " " +
+                    n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()).contains("call", ignoreCase = true))))) {
+            val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+            val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+            val incoming = (title + " " + text).contains("incoming", ignoreCase = true) ||
+                (title + " " + text).contains("calling", ignoreCase = true)
+            IslandState.showCall(IslandCall(if (incoming) CallState.RINGING else CallState.ACTIVE,
+                number = title.ifBlank { "WhatsApp call" },
+                startedAtMillis = if (incoming) 0L else System.currentTimeMillis(),
+                packageName = "com.whatsapp"))
+            n.actions?.firstOrNull { action ->
+                val label = action.title?.toString().orEmpty()
+                label.contains("end", true) || label.contains("decline", true) || label.contains("reject", true)
+            }?.let { action ->
+                CallActions.endCall = { try { action.actionIntent.send() } catch (_: Exception) {} }
+            }
+            return
+        }
+        if (sbn.isOngoing || sbn.packageName !in Prefs.allowed(this)) return
         if (n.category == Notification.CATEGORY_CALL) return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return

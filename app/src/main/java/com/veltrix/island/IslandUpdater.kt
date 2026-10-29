@@ -1,0 +1,77 @@
+package com.veltrix.island
+
+import android.app.DownloadManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.provider.Settings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+
+data class IslandUpdateInfo(val versionCode: Int, val versionName: String, val apkUrl: String)
+
+object IslandUpdater {
+    private const val RELEASE_API = "https://api.github.com/repos/Nexora-Apparel/Veltrix-Dynamic-island-/releases/tags/latest"
+
+    suspend fun check(): IslandUpdateInfo? = withContext(Dispatchers.IO) {
+        val connection = URL(RELEASE_API).openConnection() as HttpURLConnection
+        connection.connectTimeout = 12000
+        connection.readTimeout = 12000
+        connection.setRequestProperty("Accept", "application/vnd.github+json")
+        connection.setRequestProperty("User-Agent", "Veltrix-Island-Android")
+        try {
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+            val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            val versionCode = Regex("(?m)^versionCode=(\\d+)\\s*$").find(release.optString("body"))?.groupValues?.get(1)?.toIntOrNull() ?: return@withContext null
+            val assets = release.optJSONArray("assets") ?: return@withContext null
+            var apkUrl: String? = null
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                if (asset.optString("name") == "VeltrixIsland.apk") { apkUrl = asset.optString("browser_download_url"); break }
+            }
+            val safeUrl = apkUrl?.takeIf { it.startsWith("https://") } ?: return@withContext null
+            IslandUpdateInfo(versionCode, release.optString("name", "Veltrix Island update"), safeUrl)
+        } finally { connection.disconnect() }
+    }
+
+    fun download(context: Context, update: IslandUpdateInfo): Long {
+        val request = DownloadManager.Request(Uri.parse(update.apkUrl))
+            .setTitle("Veltrix Island update")
+            .setDescription("Downloading " + update.versionName)
+            .setMimeType("application/vnd.android.package-archive")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "VeltrixIsland-update.apk")
+        val id = context.getSystemService(DownloadManager::class.java).enqueue(request)
+        context.getSharedPreferences("veltrix_updater", Context.MODE_PRIVATE).edit().putLong("download_id", id).apply()
+        return id
+    }
+
+    fun installDownloaded(context: Context): Boolean {
+        val id = context.getSharedPreferences("veltrix_updater", Context.MODE_PRIVATE).getLong("download_id", -1L)
+        if (id < 0) return false
+        val manager = context.getSystemService(DownloadManager::class.java)
+        manager.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+            if (!cursor.moveToFirst() || cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) != DownloadManager.STATUS_SUCCESSFUL) return false
+            val uri = manager.getUriForDownloadedFile(id) ?: return false
+            if (android.os.Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return false
+            }
+            context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+            return true
+        }
+    }
+
+    fun downloadStatus(context: Context): Int? {
+        val id = context.getSharedPreferences("veltrix_updater", Context.MODE_PRIVATE).getLong("download_id", -1L)
+        if (id < 0) return null
+        context.getSystemService(DownloadManager::class.java).query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+            if (!cursor.moveToFirst()) return null
+            return cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+        }
+    }
+}

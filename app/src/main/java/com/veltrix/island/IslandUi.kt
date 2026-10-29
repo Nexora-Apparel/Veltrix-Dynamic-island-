@@ -70,7 +70,7 @@ fun IslandRoot() {
         if (media != null && !media.playing && inactivePackage != null) {
             delay(10 * 60 * 1000L)
             val current = IslandState.flow.value.media
-            if (current?.packageName == inactivePackage && !current.playing) {
+            if (current?.packageName == inactivePackage && current?.playing == false) {
                 IslandState.showMedia(null)
             }
         }

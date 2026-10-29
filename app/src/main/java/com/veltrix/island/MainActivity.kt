@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -39,6 +40,7 @@ private fun Setup() {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
     val overlayOk = remember(tick) { Settings.canDrawOverlays(ctx) }
     val listenerOk = remember(tick) { NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName) }
+    val batteryOk = remember(tick) { ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName) }
     val a11yOk = remember(tick) {
         Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             ?.contains("${ctx.packageName}/${IslandAccessibilityService::class.java.name}") == true
@@ -84,8 +86,13 @@ private fun Setup() {
             ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } }
         item { Step("3. Lock-screen mode (Accessibility)", a11yOk, "Enable") {
             ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
-        item { Step("4. Never kill the island (battery: Unrestricted)", false, "Open") {
-            ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } }
+        item { Step("4. Battery optimization", batteryOk, "Set unrestricted") {
+            try {
+                ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
+            } catch (_: Exception) {
+                ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        } }
 
         item { Text("Camera alignment", style = MaterialTheme.typography.titleMedium) }
         item {

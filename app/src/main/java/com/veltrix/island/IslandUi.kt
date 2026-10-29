@@ -47,7 +47,7 @@ fun IslandRoot() {
     }
     val dot = when {
         s.level in 0..30 -> Red
-        s.charging && s.level in 40..100 -> Green
+        s.level in 40..100 -> Green
         else -> null
     }
     Box(Modifier.padding(10.dp)) {

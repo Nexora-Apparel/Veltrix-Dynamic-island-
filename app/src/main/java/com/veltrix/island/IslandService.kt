@@ -59,7 +59,10 @@ class IslandService : Service() {
         } catch (_: SecurityException) { }
     }
 
-    override fun onStartCommand(i: Intent?, f: Int, id: Int) = START_STICKY
+    override fun onStartCommand(i: Intent?, f: Int, id: Int): Int {
+        registerPhoneReceiverIfPermitted()
+        return START_STICKY
+    }
     override fun onBind(i: Intent?): IBinder? = null
     override fun onDestroy() {
         if (phoneReceiverRegistered) {

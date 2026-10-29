@@ -57,7 +57,7 @@ jobs:
           "$APKSIGNER" sign --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$APK" app/build/outputs/apk/release/app-release-unsigned.apk
 
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
-          FINGERPRINT="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-signature.txt" | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          FINGERPRINT="$(sed -n 's/.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-signature.txt" | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           if [[ ! "$FINGERPRINT" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::Could not read the APK signing certificate SHA-256 fingerprint."
             exit 1

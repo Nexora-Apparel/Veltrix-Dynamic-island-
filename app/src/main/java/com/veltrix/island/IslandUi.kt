@@ -64,6 +64,17 @@ fun IslandRoot() {
             elapsed++
         }
     }
+    // Keep paused media visible briefly, then clear it after 10 minutes of inactivity.
+    LaunchedEffect(media?.packageName, media?.playing) {
+        val inactivePackage = media?.packageName
+        if (media != null && !media.playing && inactivePackage != null) {
+            delay(10 * 60 * 1000L)
+            val current = IslandState.flow.value.media
+            if (current?.packageName == inactivePackage && !current.playing) {
+                IslandState.showMedia(null)
+            }
+        }
+    }
     val liquid = spring<Dp>(dampingRatio = 0.58f, stiffness = Spring.StiffnessLow)
     val widthTarget = if (expanded) 320.dp else cfg.widthDp.dp
     val heightTarget = if (expanded) when {
@@ -104,6 +115,8 @@ fun IslandRoot() {
                                 Text(media.artist.ifBlank { appLabel(media.packageName) }, color = Color.LightGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Text(formatTime(elapsed), color = Green, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Spacer(Modifier.width(7.dp))
+                            if (dot != null) PulseDot(dot)
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = { MediaActions.previous?.invoke() }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("⏮", color = Color.White, fontSize = 19.sp) }
@@ -122,6 +135,8 @@ fun IslandRoot() {
                                 Text(call.number ?: if (call.packageName == "com.whatsapp") "WhatsApp call" else "Phone call", color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             if (call.state == CallState.ACTIVE) Text(formatTime(((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L) + callClockTick * 0L), color = Green, fontSize = 12.sp)
+                            Spacer(Modifier.width(7.dp))
+                            if (dot != null) PulseDot(dot)
                         }
                         Spacer(Modifier.height(5.dp))
                         if (call.packageName == "com.whatsapp" && CallActions.endCall != null) {
@@ -151,6 +166,8 @@ fun IslandRoot() {
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { GreenWave() }
                         Spacer(Modifier.width(6.dp))
                         Text(formatTime(elapsed), color = Green, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(6.dp))
+                        if (dot != null) PulseDot(dot)
                     }
                 }
                 !expanded && call != null -> {
@@ -160,6 +177,8 @@ fun IslandRoot() {
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { GreenWave() }
                         Spacer(Modifier.width(6.dp))
                         Text(if (call.state == CallState.ACTIVE) formatTime((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L + callClockTick * 0L) else "CALL", color = Green, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(6.dp))
+                        if (dot != null) PulseDot(dot)
                     }
                 }
                 !expanded && note != null -> {

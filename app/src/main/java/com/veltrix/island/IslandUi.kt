@@ -30,14 +30,28 @@ fun IslandRoot() {
     if (!s.screenOn) return
     val cfg = s.config
     val note = s.notification
+    val call = s.call
     var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(note?.key) {
-        if (note != null) { expanded = true; delay(4500); expanded = false; delay(450); IslandState.clearNotification(note.key) }
+    LaunchedEffect(note?.key, call?.state) {
+        if (call != null) {
+            expanded = true
+        } else if (note != null) {
+            expanded = true
+            delay(4500)
+            expanded = false
+            delay(450)
+            IslandState.clearNotification(note.key)
+        }
     }
-    LaunchedEffect(expanded) { if (expanded && note == null) { delay(3000); expanded = false } }
+    LaunchedEffect(expanded, note?.key, call?.state) {
+        if (expanded && note == null && call == null) {
+            delay(3000)
+            expanded = false
+        }
+    }
     val liquid = spring<Dp>(dampingRatio = 0.58f, stiffness = Spring.StiffnessLow)
     val w by animateDpAsState(if (expanded) 320.dp else cfg.widthDp.dp, liquid, label = "w")
-    val h by animateDpAsState(if (expanded) (if (note != null) 78.dp else 48.dp) else cfg.heightDp.dp, liquid, label = "h")
+    val h by animateDpAsState(if (expanded) (if (call != null) 64.dp else if (note != null) 78.dp else 48.dp) else cfg.heightDp.dp, liquid, label = "h")
     val bounce = remember { Animatable(1f) }
     LaunchedEffect(s.unlockTick) {
         if (s.unlockTick > 0) {
@@ -60,15 +74,24 @@ fun IslandRoot() {
             if (expanded) {
                 Row(Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        if (note != null) {
-                            Text(note.app, color = Color(0xFF8E8E93), fontSize = 11.sp, maxLines = 1)
-                            Text(note.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (note.text.isNotEmpty()) Text(note.text, color = Color(0xFFD1D1D6), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        } else {
-                            Text("${s.level}%" + if (s.charging) "  ⚡" else "", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        when {
+                            call?.state == CallState.RINGING -> {
+                                Text("INCOMING CALL", color = Green, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(call.number ?: "Caller details unavailable", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            call?.state == CallState.ACTIVE -> {
+                                Text("CALL IN PROGRESS", color = Green, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text("Phone call active", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
+                            note != null -> {
+                                Text(note.app, color = Color(0xFF8E8E93), fontSize = 11.sp, maxLines = 1)
+                                Text(note.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (note.text.isNotEmpty()) Text(note.text, color = Color(0xFFD1D1D6), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            else -> Text("${s.level}%" + if (s.charging) "  ⚡" else "", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         }
                     }
-                    if (dot != null) { Spacer(Modifier.width(8.dp)); PulseDot(dot) }
+                    if (call == null && dot != null) { Spacer(Modifier.width(8.dp)); PulseDot(dot) }
                 }
             } else if (dot != null) {
                 Box(Modifier.fillMaxSize().padding(end = 12.dp), Alignment.CenterEnd) { PulseDot(dot) }

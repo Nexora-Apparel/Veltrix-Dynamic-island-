@@ -49,8 +49,7 @@ fun IslandRoot() {
         }
     }
     LaunchedEffect(note?.key, call?.state, s.notificationDurationSeconds) {
-        if (call != null) expanded = true
-        else if (note != null) {
+        if (note != null && call == null) {
             expanded = true
             delay((s.notificationDurationSeconds * 1000L).coerceIn(10_000L, 60_000L))
             expanded = false

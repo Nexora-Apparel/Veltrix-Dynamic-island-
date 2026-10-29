@@ -1,6 +1,7 @@
 package com.veltrix.island
 
 import android.Manifest
+import android.app.DownloadManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -25,6 +26,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,6 +89,7 @@ private fun Setup() {
     LazyColumn(Modifier.fillMaxSize().systemBarsPadding(), contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Veltrix Island", style = MaterialTheme.typography.headlineMedium) }
+        item { UpdaterCard() }
         item { Step("1. Draw over other apps (required)", overlayOk, "Grant") {
             ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))) } }
         item { Step("2. Notification access", listenerOk, "Grant") {
@@ -135,6 +138,84 @@ private fun Setup() {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(label, Modifier.weight(1f))
                 Switch(pkg in allowed, { on -> Prefs.setAllowed(ctx, pkg, on); allowed = Prefs.allowed(ctx) })
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun UpdaterCard() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("Check GitHub for the latest version.") }
+    var update by remember { mutableStateOf<IslandUpdateInfo?>(null) }
+    var currentVersion by remember { mutableIntStateOf(1) }
+    var downloadStatus by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(Unit) {
+        currentVersion = try {
+            if (Build.VERSION.SDK_INT >= 28) ctx.packageManager.getPackageInfo(ctx.packageName, 0).longVersionCode.toInt()
+            else @Suppress("DEPRECATION") ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
+        } catch (_: Exception) { 1 }
+        downloadStatus = IslandUpdater.downloadStatus(ctx) ?: -1
+    }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("App updates", style = MaterialTheme.typography.titleLarge)
+            Text("Installed version code: $currentVersion")
+            Text(message, style = MaterialTheme.typography.bodyMedium)
+            Button(
+                enabled = !checking,
+                onClick = {
+                    checking = true
+                    message = "Checking GitHub Releases…"
+                    scope.launch {
+                        try {
+                            val found = IslandUpdater.check()
+                            update = found
+                            message = when {
+                                found == null -> "No published update found yet. The release updater needs a stable signing key configured."
+                                found.versionCode <= currentVersion -> "You're up to date."
+                                else -> "Update available: " + found.versionName + " (code " + found.versionCode + ")"
+                            }
+                        } catch (_: Exception) {
+                            message = "Could not check for updates. Check your internet connection and try again."
+                        } finally { checking = false }
+                    }
+                }
+            ) { Text(if (checking) "Checking…" else "Check for updates") }
+
+            val available = update?.let { it.versionCode > currentVersion } == true
+            if (available) {
+                Button(onClick = {
+                    val found = update ?: return@Button
+                    try {
+                        IslandUpdater.download(ctx, found)
+                        downloadStatus = DownloadManager.STATUS_PENDING
+                        message = "Download started. Android will show download progress in notifications."
+                    } catch (_: Exception) {
+                        message = "Could not start the download. Please try again."
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Download & Install") }
+            }
+
+            if (downloadStatus == DownloadManager.STATUS_PENDING ||
+                downloadStatus == DownloadManager.STATUS_RUNNING ||
+                downloadStatus == DownloadManager.STATUS_PAUSED) {
+                OutlinedButton(onClick = {
+                    downloadStatus = IslandUpdater.downloadStatus(ctx) ?: -1
+                    message = if (downloadStatus == DownloadManager.STATUS_SUCCESSFUL) "Download complete. Tap Install update." else "Download is still in progress."
+                }, modifier = Modifier.fillMaxWidth()) { Text("Check download status") }
+            }
+            if (downloadStatus == DownloadManager.STATUS_SUCCESSFUL) {
+                Button(onClick = {
+                    val opened = IslandUpdater.installDownloaded(ctx)
+                    if (opened) message = "Opening Android installer…"
+                    else message = "Allow Veltrix Island to install unknown apps in Settings, then return and tap Install update again."
+                }, modifier = Modifier.fillMaxWidth()) { Text("Install update") }
             }
         }
     }

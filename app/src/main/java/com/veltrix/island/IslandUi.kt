@@ -40,8 +40,15 @@ fun IslandRoot() {
     val media = s.media
     var expanded by remember { mutableStateOf(false) }
     var elapsed by remember { mutableLongStateOf(0L) }
+    var callClockTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(note?.key, call?.state) {
+    LaunchedEffect(call?.state) {
+        while (call?.state == CallState.ACTIVE) {
+            delay(1000)
+            callClockTick++
+        }
+    }
+    LaunchedEffect(note?.key, call?.state, s.notificationDurationSeconds) {
         if (call != null) expanded = true
         else if (note != null) {
             expanded = true
@@ -115,10 +122,16 @@ fun IslandRoot() {
                                 Text(if (call.state == CallState.RINGING) "INCOMING CALL" else "CALL IN PROGRESS", color = Green, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 Text(call.number ?: if (call.packageName == "com.whatsapp") "WhatsApp call" else "Phone call", color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            if (call.state == CallState.ACTIVE) Text(formatTime(((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L)), color = Green, fontSize = 12.sp)
+                            if (call.state == CallState.ACTIVE) Text(formatTime(((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L) + callClockTick * 0L), color = Green, fontSize = 12.sp)
                         }
                         Spacer(Modifier.height(5.dp))
-                        Text(if (call.state == CallState.RINGING) "Use the phone screen to answer or decline" else "Tap to return to the call screen to end the call", color = Color.LightGray, fontSize = 10.sp, maxLines = 2)
+                        if (call.packageName == "com.whatsapp" && CallActions.endCall != null) {
+                            TextButton(onClick = { CallActions.endCall?.invoke() }, contentPadding = PaddingValues(0.dp)) {
+                                Text(if (call.state == CallState.RINGING) "Decline call" else "End call", color = Color(0xFFFF453A), fontSize = 12.sp)
+                            }
+                        } else {
+                            Text(if (call.state == CallState.RINGING) "Use the phone screen to answer or decline" else "Use the phone screen to end the call", color = Color.LightGray, fontSize = 10.sp, maxLines = 2)
+                        }
                     }
                 }
                 expanded && note != null -> {
@@ -147,7 +160,7 @@ fun IslandRoot() {
                         Spacer(Modifier.width(8.dp))
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { GreenWave() }
                         Spacer(Modifier.width(6.dp))
-                        Text(if (call.state == CallState.ACTIVE) formatTime((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L) else "CALL", color = Green, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (call.state == CallState.ACTIVE) formatTime((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L + callClockTick * 0L) else "CALL", color = Green, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 !expanded && note != null -> {

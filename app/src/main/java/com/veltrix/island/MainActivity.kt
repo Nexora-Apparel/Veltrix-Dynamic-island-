@@ -40,6 +40,7 @@ private fun Setup() {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
     val overlayOk = remember(tick) { Settings.canDrawOverlays(ctx) }
     val listenerOk = remember(tick) { NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName) }
+    val phoneOk = remember(tick) { androidx.core.content.PermissionChecker.checkSelfPermission(ctx, Manifest.permission.READ_PHONE_STATE) == androidx.core.content.PermissionChecker.PERMISSION_GRANTED }
     val batteryOk = remember(tick) { ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName) }
     val a11yOk = remember(tick) {
         Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
@@ -51,6 +52,10 @@ private fun Setup() {
     val screenW = LocalConfiguration.current.screenWidthDp
 
     val postPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val phonePerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && Settings.canDrawOverlays(ctx)) ContextCompat.startForegroundService(ctx, Intent(ctx, IslandService::class.java))
+        tick++
+    }
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33) postPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
@@ -84,9 +89,12 @@ private fun Setup() {
             ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))) } }
         item { Step("2. Notification access", listenerOk, "Grant") {
             ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) } }
-        item { Step("3. Lock-screen mode (Accessibility)", a11yOk, "Enable") {
+        item { Step("3. Phone call detection", phoneOk, "Allow") {
+            if (!phoneOk) phonePerm.launch(Manifest.permission.READ_PHONE_STATE)
+        } }
+        item { Step("4. Lock-screen mode (Accessibility)", a11yOk, "Enable") {
             ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
-        item { Step("4. Battery optimization", batteryOk, "Set unrestricted") {
+        item { Step("5. Battery optimization", batteryOk, "Set unrestricted") {
             try {
                 ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
             } catch (_: Exception) {

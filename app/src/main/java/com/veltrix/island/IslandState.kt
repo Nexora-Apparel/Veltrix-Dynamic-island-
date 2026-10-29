@@ -34,6 +34,7 @@ object IslandState {
     fun clearCall() = flow.update { it.copy(call = null) }
     fun showMedia(media: IslandMedia?) = flow.update { it.copy(media = media) }
 }
+object CallActions { @Volatile var endCall: (() -> Unit)? = null }
 object MediaActions {
     @Volatile var playPause: (() -> Unit)? = null
     @Volatile var next: (() -> Unit)? = null

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Veltrix Island</string>
+    <string name="a11y_desc">Draws the island overlay above the lock screen. Reads no screen content.</string>
+</resources>

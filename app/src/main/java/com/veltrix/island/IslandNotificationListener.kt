@@ -155,9 +155,6 @@ class IslandNotificationListener : NotificationListenerService() {
                 incoming
             }
             publishMedia(sbn.packageName)
-            MediaActions.playPause = { togglePlayback(sbn.packageName) }
-            MediaActions.next = { controllers[sbn.packageName]?.transportControls?.skipToNext() }
-            MediaActions.previous = { controllers[sbn.packageName]?.transportControls?.skipToPrevious() }
         } catch (_: SecurityException) { }
         catch (_: IllegalArgumentException) { }
     }

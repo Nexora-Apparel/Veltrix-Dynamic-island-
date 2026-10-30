@@ -222,9 +222,13 @@ private fun UpdaterCard() {
             }
             if (downloadStatus == DownloadManager.STATUS_SUCCESSFUL) {
                 Button(onClick = {
-                    val opened = IslandUpdater.installDownloaded(ctx)
-                    if (opened) message = "Opening Android installer…"
-                    else message = "Allow Veltrix Island to install unknown apps in Settings, then return and tap Install update again."
+                    try {
+                        val opened = IslandUpdater.installDownloaded(ctx)
+                        if (opened) message = "APK verified. Opening Android installer…"
+                        else message = "Allow Veltrix Island to install unknown apps in Settings, then return and tap Install update again."
+                    } catch (error: Exception) {
+                        message = error.message ?: "The downloaded APK failed verification. Download it again."
+                    }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Install update") }
             }
         }

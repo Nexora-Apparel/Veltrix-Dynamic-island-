@@ -124,3 +124,44 @@ object LiveActivities {
         IslandState.flow.update { it.copy(liveActivities = ordered) }
     }
 }
+
+
+/** Local countdown producer for the unified Live Activities surface. */
+object IslandTimer {
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var endAtMillis: Long = 0L
+    @Volatile private var durationMillis: Long = 0L
+    @Volatile private var label: String = "Timer"
+    private val activityId = "timer:local"
+    private val ticker = object : Runnable {
+        override fun run() {
+            val remaining = (endAtMillis - System.currentTimeMillis()).coerceAtLeast(0L)
+            val progress = if (durationMillis <= 0L) 0f else 1f - remaining.toFloat() / durationMillis.toFloat()
+            if (remaining <= 0L) {
+                LiveActivities.upsert(LiveActivity(activityId, ActivityKind.TIMER, "$label complete", "Finished", progress = 1f, status = "completed", priority = 80))
+                endAtMillis = 0L
+                return
+            }
+            val seconds = (remaining + 999L) / 1000L
+            LiveActivities.upsert(LiveActivity(activityId, ActivityKind.TIMER, label, "%d:%02d remaining".format(seconds / 60L, seconds % 60L), progress = progress.coerceIn(0f, 1f), priority = 80))
+            handler.postDelayed(this, 1000L)
+        }
+    }
+
+    @Synchronized fun start(durationSeconds: Long, title: String = "Timer") {
+        require(durationSeconds in 1L..86400L) { "Timer duration must be between 1 second and 24 hours." }
+        handler.removeCallbacks(ticker)
+        durationMillis = durationSeconds * 1000L
+        endAtMillis = System.currentTimeMillis() + durationMillis
+        label = title.take(40).ifBlank { "Timer" }
+        ticker.run()
+    }
+
+    @Synchronized fun cancel() {
+        handler.removeCallbacks(ticker)
+        endAtMillis = 0L
+        LiveActivities.remove(activityId)
+    }
+
+    fun isRunning(): Boolean = endAtMillis > System.currentTimeMillis()
+}

@@ -207,6 +207,17 @@ private fun UpdaterCard() {
         } catch (_: Exception) { 1 }
         downloadStatus = IslandUpdater.downloadStatus(ctx) ?: -1
         downloadId = IslandUpdater.currentDownloadId(ctx)
+        if (downloadId >= 0L && downloadStatus == -1) {
+            message = "A previous download is no longer available. Check for updates and download again."
+        } else if (downloadStatus == DownloadManager.STATUS_FAILED) {
+            message = IslandUpdater.downloadFailureMessage(ctx) ?: "Download failed. Retry the update."
+        } else if (downloadStatus == DownloadManager.STATUS_SUCCESSFUL) {
+            message = "Download complete. Tap Install update."
+        } else if (downloadStatus == DownloadManager.STATUS_RUNNING ||
+            downloadStatus == DownloadManager.STATUS_PENDING ||
+            downloadStatus == DownloadManager.STATUS_PAUSED) {
+            message = "An update download is already in progress. Restoring its status…"
+        }
     }
 
     LaunchedEffect(downloadId) {
@@ -219,7 +230,11 @@ private fun UpdaterCard() {
                     break
                 }
                 if (status == DownloadManager.STATUS_FAILED) {
-                    message = "Download failed. Check your connection and retry."
+                    message = IslandUpdater.downloadFailureMessage(ctx) ?: "Download failed. Retry the update."
+                    break
+                }
+                if (status == -1) {
+                    message = "The saved download record is missing. Check for updates and download again."
                     break
                 }
                 if (status != DownloadManager.STATUS_PENDING && status != DownloadManager.STATUS_RUNNING && status != DownloadManager.STATUS_PAUSED) break

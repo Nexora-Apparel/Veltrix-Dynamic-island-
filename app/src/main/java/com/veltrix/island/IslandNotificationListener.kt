@@ -20,6 +20,7 @@ class IslandNotificationListener : NotificationListenerService() {
     private val mediaTimeouts = ConcurrentHashMap<String, Runnable>()
     private val mediaLastUpdated = ConcurrentHashMap<String, Long>()
     private val mediaInactivityTimeoutMs = 10 * 60 * 1000L
+    @Volatile private var whatsappCallNotificationKey: String? = null
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -33,7 +34,8 @@ class IslandNotificationListener : NotificationListenerService() {
         if (dismissedByIsland.remove(sbn.key)) return
         IslandState.clearNotification(sbn.key)
         LiveActivities.remove("navigation:" + sbn.key)
-        if (sbn.packageName == "com.whatsapp" && IslandState.flow.value.call?.packageName == "com.whatsapp") {
+        if (sbn.packageName == "com.whatsapp" && whatsappCallNotificationKey == sbn.key) {
+            whatsappCallNotificationKey = null
             IslandState.clearCall()
             CallActions.endCall = null
         }
@@ -49,6 +51,8 @@ class IslandNotificationListener : NotificationListenerService() {
             (n.category == Notification.CATEGORY_CALL ||
                 (sbn.isOngoing && ((n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() + " " +
                     n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()).contains("call", ignoreCase = true))))) {
+            whatsappCallNotificationKey = sbn.key
+            CallActions.endCall = null
             val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
             val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
             val incoming = (title + " " + text).contains("incoming", ignoreCase = true) ||
@@ -272,6 +276,8 @@ class IslandNotificationListener : NotificationListenerService() {
         controllers.clear()
         mediaLastUpdated.clear()
         IslandState.showMedia(null)
+        whatsappCallNotificationKey = null
+        CallActions.endCall = null
         MediaActions.playPause = null
         MediaActions.next = null
         MediaActions.previous = null

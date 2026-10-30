@@ -197,14 +197,20 @@ class IslandNotificationListener : NotificationListenerService() {
 
     private fun scheduleMediaTimeout(pkg: String) {
         cancelMediaTimeout(pkg)
-        val timeout = Runnable {
-            mediaTimeouts.remove(pkg)
+        // Bind the timeout to the exact session and callback that scheduled it.
+        // A delayed timeout must never evict a newer replacement session.
+        val scheduledController = controllers[pkg] ?: return
+        val scheduledCallback = callbacks[pkg] ?: return
+        lateinit var timeout: Runnable
+        timeout = Runnable {
+            if (!mediaTimeouts.remove(pkg, timeout)) return@Runnable
             val current = controllers[pkg]
-            if (current?.playbackState?.state == PlaybackState.STATE_PAUSED) {
-                controllers.remove(pkg, current)
-                callbacks.remove(pkg)?.let { cb ->
-                    try { current.unregisterCallback(cb) } catch (_: Exception) {}
-                }
+            if (current === scheduledController &&
+                callbacks[pkg] === scheduledCallback &&
+                current.playbackState?.state == PlaybackState.STATE_PAUSED &&
+                controllers.remove(pkg, scheduledController) &&
+                callbacks.remove(pkg, scheduledCallback)) {
+                try { scheduledController.unregisterCallback(scheduledCallback) } catch (_: Exception) {}
                 mediaLastUpdated.remove(pkg)
                 selectMediaSession()
             }
@@ -259,9 +265,12 @@ class IslandNotificationListener : NotificationListenerService() {
             PlaybackState.STATE_PAUSED -> scheduleMediaTimeout(pkg)
             else -> {
                 cancelMediaTimeout(pkg)
-                controllers.remove(pkg, controller)
-                callbacks.remove(pkg)?.let { cb ->
-                    try { controller.unregisterCallback(cb) } catch (_: Exception) {}
+                if (controllers.remove(pkg, controller)) {
+                    callbacks[pkg]?.let { cb ->
+                        if (callbacks.remove(pkg, cb)) {
+                            try { controller.unregisterCallback(cb) } catch (_: Exception) {}
+                        }
+                    }
                 }
                 mediaLastUpdated.remove(pkg)
             }

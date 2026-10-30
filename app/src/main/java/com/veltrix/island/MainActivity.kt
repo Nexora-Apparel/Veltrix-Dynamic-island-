@@ -259,7 +259,7 @@ private fun UpdaterCard() {
                 Button(onClick = {
                     val found = update ?: return@Button
                     try {
-                        IslandUpdater.download(ctx, found)
+                        downloadId = IslandUpdater.download(ctx, found)
                         downloadStatus = DownloadManager.STATUS_PENDING
                         message = "Download started. Android will show download progress in notifications."
                     } catch (_: Exception) {

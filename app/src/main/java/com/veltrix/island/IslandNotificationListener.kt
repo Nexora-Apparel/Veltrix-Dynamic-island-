@@ -17,14 +17,9 @@ class IslandNotificationListener : NotificationListenerService() {
     private val controllers = ConcurrentHashMap<String, MediaController>()
     private val callbacks = ConcurrentHashMap<String, MediaController.Callback>()
     private val mediaTimeoutHandler = Handler(Looper.getMainLooper())
-    private var mediaTimeoutPackage: String? = null
-    private val mediaInactivityTimeout = Runnable {
-        val pkg = mediaTimeoutPackage ?: return@Runnable
-        if (IslandState.flow.value.media?.let { it.packageName == pkg && !it.playing } == true) {
-            IslandState.showMedia(null)
-        }
-        mediaTimeoutPackage = null
-    }
+    private val mediaTimeouts = ConcurrentHashMap<String, Runnable>()
+    private val mediaLastUpdated = ConcurrentHashMap<String, Long>()
+    private val mediaInactivityTimeoutMs = 10 * 60 * 1000L
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -179,48 +174,99 @@ class IslandNotificationListener : NotificationListenerService() {
     private fun refreshMedia(pkg: String) {
         val controller = controllers[pkg]
         if (controller == null) {
-            clearMediaTimeout()
-            IslandState.showMedia(null)
-            return
+            cancelMediaTimeout(pkg)
+            mediaLastUpdated.remove(pkg)
+        } else {
+            publishMedia(pkg)
         }
-        publishMedia(pkg)
+        selectMediaSession()
     }
 
-    private fun clearMediaTimeout() {
-        mediaTimeoutHandler.removeCallbacks(mediaInactivityTimeout)
-        mediaTimeoutPackage = null
+    private fun cancelMediaTimeout(pkg: String) {
+        mediaTimeouts.remove(pkg)?.let { mediaTimeoutHandler.removeCallbacks(it) }
+    }
+
+    private fun scheduleMediaTimeout(pkg: String) {
+        cancelMediaTimeout(pkg)
+        val timeout = Runnable {
+            mediaTimeouts.remove(pkg)
+            val current = controllers[pkg]
+            if (current?.playbackState?.state == PlaybackState.STATE_PAUSED) {
+                controllers.remove(pkg, current)
+                callbacks.remove(pkg)?.let { cb ->
+                    try { current.unregisterCallback(cb) } catch (_: Exception) {}
+                }
+                mediaLastUpdated.remove(pkg)
+                selectMediaSession()
+            }
+        }
+        mediaTimeouts[pkg] = timeout
+        mediaTimeoutHandler.postDelayed(timeout, mediaInactivityTimeoutMs)
+    }
+
+    private fun selectMediaSession() {
+        val candidates = controllers.keys.mapNotNull { pkg ->
+            val controller = controllers[pkg] ?: return@mapNotNull null
+            val state = controller.playbackState?.state ?: return@mapNotNull null
+            val active = state == PlaybackState.STATE_PLAYING ||
+                state == PlaybackState.STATE_BUFFERING ||
+                state == PlaybackState.STATE_CONNECTING
+            val paused = state == PlaybackState.STATE_PAUSED
+            if (!active && !paused) return@mapNotNull null
+            Triple(pkg, controller, active)
+        }
+        val selected = candidates.sortedWith(
+            compareByDescending<Triple<String, MediaController, Boolean>> { it.third }
+                .thenByDescending { mediaLastUpdated[it.first] ?: 0L }
+        ).firstOrNull()
+        val current = selected?.second
+        if (current == null) {
+            IslandState.showMedia(null)
+            MediaActions.playPause = null
+            MediaActions.next = null
+            MediaActions.previous = null
+            return
+        }
+        val pkg = selected.first
+        val state = current.playbackState
+        val metadata = current.metadata
+        val playing = selected.third
+        val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: current.packageName
+        val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
+        val elapsed = (state?.position ?: 0L).coerceAtLeast(0L) / 1000L
+        IslandState.showMedia(IslandMedia(pkg, title, artist, playing, elapsed))
+        MediaActions.playPause = { togglePlayback(pkg) }
+        MediaActions.next = { controllers[pkg]?.transportControls?.skipToNext() }
+        MediaActions.previous = { controllers[pkg]?.transportControls?.skipToPrevious() }
     }
 
     private fun publishMedia(pkg: String) {
-        val c = controllers[pkg] ?: return
-        val state = c.playbackState
-        val metadata = c.metadata
-        val playing = state?.state == PlaybackState.STATE_PLAYING ||
-            state?.state == PlaybackState.STATE_BUFFERING ||
-            state?.state == PlaybackState.STATE_CONNECTING
-        val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: c.packageName
-        val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
-        val elapsed = (state?.position ?: 0L).coerceAtLeast(0L) / 1000L
-        if (playing || state?.state == PlaybackState.STATE_PAUSED) {
-            IslandState.showMedia(IslandMedia(pkg, title, artist, playing, elapsed))
-            if (playing) {
-                clearMediaTimeout()
-            } else {
-                mediaTimeoutHandler.removeCallbacks(mediaInactivityTimeout)
-                mediaTimeoutPackage = pkg
-                mediaTimeoutHandler.postDelayed(mediaInactivityTimeout, 10 * 60 * 1000L)
+        val controller = controllers[pkg] ?: return
+        mediaLastUpdated[pkg] = System.currentTimeMillis()
+        val state = controller.playbackState?.state
+        when (state) {
+            PlaybackState.STATE_PLAYING, PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING ->
+                cancelMediaTimeout(pkg)
+            PlaybackState.STATE_PAUSED -> scheduleMediaTimeout(pkg)
+            else -> {
+                cancelMediaTimeout(pkg)
+                controllers.remove(pkg, controller)
+                callbacks.remove(pkg)?.let { cb ->
+                    try { controller.unregisterCallback(cb) } catch (_: Exception) {}
+                }
+                mediaLastUpdated.remove(pkg)
             }
-        } else {
-            clearMediaTimeout()
-            IslandState.showMedia(null)
         }
+        selectMediaSession()
     }
 
     override fun onDestroy() {
-        clearMediaTimeout()
+        mediaTimeouts.keys.toList().forEach(::cancelMediaTimeout)
         callbacks.forEach { (pkg, cb) -> try { controllers[pkg]?.unregisterCallback(cb) } catch (_: Exception) {} }
         callbacks.clear()
         controllers.clear()
+        mediaLastUpdated.clear()
+        IslandState.showMedia(null)
         MediaActions.playPause = null
         MediaActions.next = null
         MediaActions.previous = null

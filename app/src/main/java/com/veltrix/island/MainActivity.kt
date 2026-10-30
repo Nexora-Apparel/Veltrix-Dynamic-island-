@@ -205,6 +205,7 @@ private fun UpdaterCard() {
             if (Build.VERSION.SDK_INT >= 28) ctx.packageManager.getPackageInfo(ctx.packageName, 0).longVersionCode.toInt()
             else @Suppress("DEPRECATION") ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
         } catch (_: Exception) { 1 }
+        IslandUpdater.reconcileInstalledVersion(ctx)
         downloadStatus = IslandUpdater.downloadStatus(ctx) ?: -1
         downloadId = IslandUpdater.currentDownloadId(ctx)
         if (downloadId >= 0L && downloadStatus == -1) {

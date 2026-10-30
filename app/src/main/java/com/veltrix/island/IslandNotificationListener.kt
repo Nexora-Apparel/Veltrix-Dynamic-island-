@@ -4,9 +4,11 @@ import android.app.Notification
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.os.Build
 import java.util.concurrent.ConcurrentHashMap
 
 /** Bound by Android only when notification access is granted. */
@@ -14,6 +16,15 @@ class IslandNotificationListener : NotificationListenerService() {
     private val dismissedByIsland = ConcurrentHashMap.newKeySet<String>()
     private val controllers = ConcurrentHashMap<String, MediaController>()
     private val callbacks = ConcurrentHashMap<String, MediaController.Callback>()
+    private val mediaTimeoutHandler = Handler(Looper.getMainLooper())
+    private var mediaTimeoutPackage: String? = null
+    private val mediaInactivityTimeout = Runnable {
+        val pkg = mediaTimeoutPackage ?: return@Runnable
+        if (IslandState.flow.value.media?.let { it.packageName == pkg && !it.playing } == true) {
+            IslandState.showMedia(null)
+        }
+        mediaTimeoutPackage = null
+    }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -119,10 +130,16 @@ class IslandNotificationListener : NotificationListenerService() {
     private fun refreshMedia(pkg: String) {
         val controller = controllers[pkg]
         if (controller == null) {
+            clearMediaTimeout()
             IslandState.showMedia(null)
             return
         }
         publishMedia(pkg)
+    }
+
+    private fun clearMediaTimeout() {
+        mediaTimeoutHandler.removeCallbacks(mediaInactivityTimeout)
+        mediaTimeoutPackage = null
     }
 
     private fun publishMedia(pkg: String) {
@@ -132,14 +149,29 @@ class IslandNotificationListener : NotificationListenerService() {
         val playing = state?.state == PlaybackState.STATE_PLAYING ||
             state?.state == PlaybackState.STATE_BUFFERING ||
             state?.state == PlaybackState.STATE_CONNECTING
-        val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
-            ?: c.packageName
+        val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: c.packageName
         val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
         val elapsed = (state?.position ?: 0L).coerceAtLeast(0L) / 1000L
         if (playing || state?.state == PlaybackState.STATE_PAUSED) {
             IslandState.showMedia(IslandMedia(pkg, title, artist, playing, elapsed))
+            if (playing) {
+                clearMediaTimeout()
+            } else {
+                mediaTimeoutHandler.removeCallbacks(mediaInactivityTimeout)
+                mediaTimeoutPackage = pkg
+                mediaTimeoutHandler.postDelayed(mediaInactivityTimeout, 10 * 60 * 1000L)
+            }
         } else {
+            clearMediaTimeout()
             IslandState.showMedia(null)
         }
+    }
+
+    override fun onDestroy() {
+        clearMediaTimeout()
+        callbacks.forEach { (pkg, cb) -> try { controllers[pkg]?.unregisterCallback(cb) } catch (_: Exception) {} }
+        callbacks.clear()
+        controllers.clear()
+        super.onDestroy()
     }
 }

@@ -1,177 +1,179 @@
 package com.veltrix.island
 
-import android.app.Notification
-import android.media.session.MediaController
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
+import android.app.DownloadManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.service.notification.NotificationListenerService
-import android.service.notification.StatusBarNotification
-import java.util.concurrent.ConcurrentHashMap
+import android.os.Environment
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
-/** Bound by Android only when notification access is granted. */
-class IslandNotificationListener : NotificationListenerService() {
-    private val dismissedByIsland = ConcurrentHashMap.newKeySet<String>()
-    private val controllers = ConcurrentHashMap<String, MediaController>()
-    private val callbacks = ConcurrentHashMap<String, MediaController.Callback>()
-    private val mediaTimeoutHandler = Handler(Looper.getMainLooper())
-    private var mediaTimeoutPackage: String? = null
-    private val mediaInactivityTimeout = Runnable {
-        val pkg = mediaTimeoutPackage ?: return@Runnable
-        if (IslandState.flow.value.media?.let { it.packageName == pkg && !it.playing } == true) {
-            IslandState.showMedia(null)
-        }
-        mediaTimeoutPackage = null
-    }
+data class IslandUpdateInfo(val versionCode: Int, val versionName: String, val apkUrl: String)
 
-    override fun onListenerConnected() {
-        super.onListenerConnected()
-        activeNotifications?.forEach { handleMediaNotification(it) }
-    }
+object IslandUpdater {
+    private const val RELEASE_API = "https://api.github.com/repos/Nexora-Apparel/Veltrix-Dynamic-island-/releases/tags/latest"
+    private const val EXPECTED_PACKAGE = "com.veltrix.island"
+    private const val APK_NAME = "VeltrixIsland-update.apk"
+    private const val PREFS = "veltrix_updater"
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (dismissedByIsland.remove(sbn.key)) return
-        IslandState.clearNotification(sbn.key)
-        if (sbn.packageName == "com.whatsapp" && IslandState.flow.value.call?.packageName == "com.whatsapp") {
-            IslandState.clearCall()
-            CallActions.endCall = null
-        }
-        if (controllers.containsKey(sbn.packageName)) refreshMedia(sbn.packageName)
-    }
-
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        handleMediaNotification(sbn)
-        if (!IslandState.flow.value.screenOn) return
-        val n = sbn.notification
-        if (sbn.packageName == "com.whatsapp" &&
-            (n.category == Notification.CATEGORY_CALL ||
-                (sbn.isOngoing && ((n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() + " " +
-                    n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()).contains("call", ignoreCase = true))))) {
-            val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-            val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-            val incoming = (title + " " + text).contains("incoming", ignoreCase = true) ||
-                (title + " " + text).contains("calling", ignoreCase = true)
-            IslandState.showCall(IslandCall(if (incoming) CallState.RINGING else CallState.ACTIVE,
-                number = title.ifBlank { "WhatsApp call" },
-                startedAtMillis = if (incoming) 0L else System.currentTimeMillis(),
-                packageName = "com.whatsapp"))
-            n.actions?.firstOrNull { action ->
-                val label = action.title?.toString().orEmpty()
-                label.contains("end", true) || label.contains("decline", true) || label.contains("reject", true)
-            }?.let { action ->
-                CallActions.endCall = { try { action.actionIntent.send() } catch (_: Exception) {} }
+    suspend fun check(): IslandUpdateInfo? = withContext(Dispatchers.IO) {
+        val connection = URL(RELEASE_API).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.setRequestProperty("Accept", "application/vnd.github+json")
+        connection.setRequestProperty("User-Agent", "Veltrix-Island-Android")
+        try {
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                throw IllegalStateException("GitHub returned HTTP ${connection.responseCode}")
             }
-            return
-        }
-        if (sbn.isOngoing || sbn.packageName !in Prefs.allowed(this)) return
-        if (n.category == Notification.CATEGORY_CALL) return
-        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return
-        val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        val label = try {
-            packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
-        } catch (_: Exception) { sbn.packageName }
-
-        IslandState.showNotification(IslandNotification(sbn.key, label, sbn.packageName, title, text))
-        dismissedByIsland.add(sbn.key)
-        try {
-            cancelNotification(sbn.key)
-        } catch (_: SecurityException) {
-            dismissedByIsland.remove(sbn.key)
-        } catch (_: IllegalArgumentException) {
-            dismissedByIsland.remove(sbn.key)
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun handleMediaNotification(sbn: StatusBarNotification) {
-        val notification = sbn.notification
-        val token: MediaSession.Token? = try {
-            if (Build.VERSION.SDK_INT >= 33)
-                notification.extras.getParcelable(Notification.EXTRA_MEDIA_SESSION, MediaSession.Token::class.java)
-            else notification.extras.getParcelable(Notification.EXTRA_MEDIA_SESSION) as? MediaSession.Token
-        } catch (_: Exception) { null }
-        if (token == null) {
-            if (controllers.containsKey(sbn.packageName)) refreshMedia(sbn.packageName)
-            return
-        }
-        try {
-            val controller = MediaController(this, token)
-            val old = controllers.put(sbn.packageName, controller)
-            if (old == null || old.sessionToken != controller.sessionToken) {
-                callbacks.remove(sbn.packageName)?.let { cb -> try { old?.unregisterCallback(cb) } catch (_: Exception) {} }
-                val cb = object : MediaController.Callback() {
-                    override fun onMetadataChanged(metadata: android.media.MediaMetadata?) { publishMedia(sbn.packageName) }
-                    override fun onPlaybackStateChanged(state: PlaybackState?) { publishMedia(sbn.packageName) }
-                    override fun onSessionDestroyed() { refreshMedia(sbn.packageName) }
+            val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            val versionCode = Regex("(?m)^versionCode=(\\d+)\\s*$")
+                .find(release.optString("body"))?.groupValues?.get(1)?.toIntOrNull()
+                ?: throw IllegalStateException("Release is missing version metadata")
+            val assets = release.optJSONArray("assets") ?: throw IllegalStateException("Release has no assets")
+            var apkUrl: String? = null
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                if (asset.optString("name") == "VeltrixIsland.apk") {
+                    apkUrl = asset.optString("browser_download_url")
+                    break
                 }
-                callbacks[sbn.packageName] = cb
-                controller.registerCallback(cb)
             }
-            publishMedia(sbn.packageName)
-            MediaActions.playPause = { togglePlayback(sbn.packageName) }
-            MediaActions.next = { controllers[sbn.packageName]?.transportControls?.skipToNext() }
-            MediaActions.previous = { controllers[sbn.packageName]?.transportControls?.skipToPrevious() }
-        } catch (_: SecurityException) { }
-        catch (_: IllegalArgumentException) { }
-    }
-
-    private fun togglePlayback(pkg: String) {
-        val controller = controllers[pkg] ?: return
-        try {
-            if (controller.playbackState?.state == PlaybackState.STATE_PLAYING)
-                controller.transportControls.pause()
-            else controller.transportControls.play()
-        } catch (_: SecurityException) { }
-    }
-
-    private fun refreshMedia(pkg: String) {
-        val controller = controllers[pkg]
-        if (controller == null) {
-            clearMediaTimeout()
-            IslandState.showMedia(null)
-            return
+            val safeUrl = apkUrl?.takeIf {
+                it.startsWith("https://github.com/Nexora-Apparel/Veltrix-Dynamic-island-/releases/download/")
+            } ?: throw IllegalStateException("Official APK asset is missing")
+            IslandUpdateInfo(versionCode, release.optString("name", "Veltrix Island update"), safeUrl)
+        } finally {
+            connection.disconnect()
         }
-        publishMedia(pkg)
     }
 
-    private fun clearMediaTimeout() {
-        mediaTimeoutHandler.removeCallbacks(mediaInactivityTimeout)
-        mediaTimeoutPackage = null
+    fun download(context: Context, update: IslandUpdateInfo): Long {
+        require(update.apkUrl.startsWith("https://github.com/Nexora-Apparel/Veltrix-Dynamic-island-/releases/download/")) {
+            "Rejected non-official update URL"
+        }
+        val request = DownloadManager.Request(Uri.parse(update.apkUrl))
+            .setTitle("Veltrix Island update")
+            .setDescription("Downloading ${update.versionName}")
+            .setMimeType("application/vnd.android.package-archive")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, APK_NAME)
+        val id = context.getSystemService(DownloadManager::class.java).enqueue(request)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putLong("download_id", id)
+            .putInt("expected_version", update.versionCode)
+            .apply()
+        return id
     }
 
-    private fun publishMedia(pkg: String) {
-        val c = controllers[pkg] ?: return
-        val state = c.playbackState
-        val metadata = c.metadata
-        val playing = state?.state == PlaybackState.STATE_PLAYING ||
-            state?.state == PlaybackState.STATE_BUFFERING ||
-            state?.state == PlaybackState.STATE_CONNECTING
-        val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: c.packageName
-        val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
-        val elapsed = (state?.position ?: 0L).coerceAtLeast(0L) / 1000L
-        if (playing || state?.state == PlaybackState.STATE_PAUSED) {
-            IslandState.showMedia(IslandMedia(pkg, title, artist, playing, elapsed))
-            if (playing) {
-                clearMediaTimeout()
-            } else {
-                mediaTimeoutHandler.removeCallbacks(mediaInactivityTimeout)
-                mediaTimeoutPackage = pkg
-                mediaTimeoutHandler.postDelayed(mediaInactivityTimeout, 10 * 60 * 1000L)
-            }
+    fun installDownloaded(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val id = prefs.getLong("download_id", -1L)
+        if (id < 0) return false
+        val manager = context.getSystemService(DownloadManager::class.java)
+        val downloadedUri = manager.getUriForDownloadedFile(id) ?: return false
+        val verifiedApk = File(context.cacheDir, APK_NAME)
+        context.contentResolver.openInputStream(downloadedUri)?.use { input ->
+            verifiedApk.outputStream().use { output -> input.copyTo(output) }
+        } ?: return false
+
+        val archiveInfo = if (Build.VERSION.SDK_INT >= 28) {
+            context.packageManager.getPackageArchiveInfo(
+                verifiedApk.absolutePath,
+                PackageManager.GET_SIGNING_CERTIFICATES
+            )
         } else {
-            clearMediaTimeout()
-            IslandState.showMedia(null)
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageArchiveInfo(
+                verifiedApk.absolutePath,
+                PackageManager.GET_SIGNATURES
+            )
+        } ?: throw IllegalStateException("Downloaded file is not a valid Android APK")
+
+        require(archiveInfo.packageName == EXPECTED_PACKAGE) {
+            "Package mismatch: expected $EXPECTED_PACKAGE, received ${archiveInfo.packageName}"
         }
+
+        val installedInfo = if (Build.VERSION.SDK_INT >= 28) {
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+        }
+
+        val installedSignatures = if (Build.VERSION.SDK_INT >= 28) {
+            installedInfo.signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet().orEmpty()
+        } else {
+            @Suppress("DEPRECATION")
+            installedInfo.signatures?.map { it.toCharsString() }?.toSet().orEmpty()
+        }
+        val updateSignatures = if (Build.VERSION.SDK_INT >= 28) {
+            archiveInfo.signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet().orEmpty()
+        } else {
+            @Suppress("DEPRECATION")
+            archiveInfo.signatures?.map { it.toCharsString() }?.toSet().orEmpty()
+        }
+        require(installedSignatures.isNotEmpty() && installedSignatures == updateSignatures) {
+            "Signing certificate mismatch. This APK cannot update the installed Veltrix Island."
+        }
+
+        val installedVersion = if (Build.VERSION.SDK_INT >= 28) installedInfo.longVersionCode else {
+            @Suppress("DEPRECATION")
+            installedInfo.versionCode.toLong()
+        }
+        val downloadedVersion = if (Build.VERSION.SDK_INT >= 28) archiveInfo.longVersionCode else {
+            @Suppress("DEPRECATION")
+            archiveInfo.versionCode.toLong()
+        }
+        require(downloadedVersion > installedVersion) {
+            "Downloaded version $downloadedVersion is not newer than installed version $installedVersion."
+        }
+        val expectedVersion = prefs.getInt("expected_version", -1)
+        require(expectedVersion < 0 || downloadedVersion == expectedVersion.toLong()) {
+            "Downloaded APK version does not match the release metadata."
+        }
+
+        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+            context.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            return false
+        }
+
+        val contentUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.updates",
+            verifiedApk
+        )
+        val installIntent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(contentUri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(installIntent)
+        return true
     }
 
-    override fun onDestroy() {
-        clearMediaTimeout()
-        callbacks.forEach { (pkg, cb) -> try { controllers[pkg]?.unregisterCallback(cb) } catch (_: Exception) {} }
-        callbacks.clear()
-        controllers.clear()
-        super.onDestroy()
+    fun currentDownloadId(context: Context): Long =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("download_id", -1L)
+
+    fun downloadStatus(context: Context): Int? {
+        val id = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("download_id", -1L)
+        if (id < 0) return null
+        context.getSystemService(DownloadManager::class.java)
+            .query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+                if (!cursor.moveToFirst()) return null
+                return cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            }
     }
 }

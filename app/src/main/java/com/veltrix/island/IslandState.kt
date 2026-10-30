@@ -14,10 +14,13 @@ data class IslandNotification(val key: String, val app: String, val packageName:
 data class IslandCall(val state: CallState, val number: String? = null, val startedAtMillis: Long = 0L, val packageName: String? = null)
 data class IslandMedia(val packageName: String, val title: String, val artist: String, val playing: Boolean, val elapsedSeconds: Long = 0L)
 enum class CallState { RINGING, ACTIVE }
+enum class RingerDisplay { NORMAL, SILENT, VIBRATE }
 data class IslandUiState(
     val level: Int = 100,
     val charging: Boolean = false,
     val screenOn: Boolean = true,
+    val deviceLocked: Boolean = false,
+    val ringerDisplay: RingerDisplay = RingerDisplay.NORMAL,
     val unlockTick: Int = 0,
     val notification: IslandNotification? = null,
     val call: IslandCall? = null,
@@ -52,6 +55,10 @@ object Prefs {
     fun setAllowed(c: Context, pkg: String, on: Boolean) {
         val s = allowed(c).toMutableSet(); if (on) s.add(pkg) else s.remove(pkg)
         sp(c).edit().putStringSet("allowed", s).apply()
+    }
+    fun setAllAllowed(c: Context, packages: Set<String>, on: Boolean) {
+        val selected = if (on) packages else emptySet()
+        sp(c).edit().putStringSet("allowed", selected).apply()
     }
     fun notificationDuration(c: Context): Int = sp(c).getInt("notification_duration", 10).coerceIn(10, 60)
     fun setNotificationDuration(c: Context, seconds: Int) {

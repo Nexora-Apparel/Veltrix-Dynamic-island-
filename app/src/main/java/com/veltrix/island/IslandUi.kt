@@ -101,7 +101,7 @@ fun IslandRoot() {
         ) {
             StatusIndicators(s.deviceLocked, s.ringerDisplay, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))
             when {
-                expanded && call != null -> {
+                expanded && media != null && note == null -> {
                     Column(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(media.packageName, 28.dp)
@@ -121,7 +121,7 @@ fun IslandRoot() {
                         }
                     }
                 }
-                expanded && media != null && note == null -> {
+                expanded && call != null -> {
                     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(call.packageName ?: "com.android.phone", 28.dp)
@@ -168,7 +168,7 @@ fun IslandRoot() {
                         }
                     }
                 }
-                !expanded && call != null -> {
+                !expanded && media != null && note == null -> {
                     Row(Modifier.fillMaxSize().padding(start = 40.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(media.packageName, 22.dp)
                         Spacer(Modifier.width(8.dp))
@@ -179,7 +179,7 @@ fun IslandRoot() {
                         if (dot != null) PulseDot(dot)
                     }
                 }
-                !expanded && media != null && note == null -> {
+                !expanded && call != null -> {
                     Row(Modifier.fillMaxSize().padding(horizontal = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(call.packageName ?: "com.android.phone", 22.dp)
                         Spacer(Modifier.width(8.dp))

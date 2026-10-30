@@ -3,9 +3,11 @@ package com.veltrix.island
 import android.content.*
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import android.graphics.PixelFormat
+import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
+import android.app.KeyguardManager
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.ui.platform.ComposeView
@@ -44,6 +46,7 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
     private var view: ComposeView? = null
     private var lp: WindowManager.LayoutParams? = null
     private var batteryOn = false
+    private var statusReceiversOn = false
     private val prefsListener = OnSharedPreferenceChangeListener { _, _ -> applyConfig() }
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = readBattery(i)
@@ -53,9 +56,15 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
             when (i.action) {
                 Intent.ACTION_SCREEN_ON -> onScreen(true)
                 Intent.ACTION_SCREEN_OFF -> onScreen(false)
-                Intent.ACTION_USER_PRESENT -> IslandState.flow.update { it.copy(unlockTick = it.unlockTick + 1) }
+                Intent.ACTION_USER_PRESENT -> {
+                    IslandState.flow.update { it.copy(unlockTick = it.unlockTick + 1, deviceLocked = false) }
+                    updateDeviceStatus()
+                }
             }
         }
+    }
+    private val ringerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) = updateDeviceStatus()
     }
     @Suppress("DEPRECATION")
     fun start() {
@@ -87,7 +96,20 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
         ContextCompat.registerReceiver(ctx, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(ctx, ringerReceiver, IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
+        statusReceiversOn = true
+        updateDeviceStatus()
         onScreen(ctx.getSystemService(PowerManager::class.java).isInteractive)
+    }
+    private fun updateDeviceStatus() {
+        val keyguard = ctx.getSystemService(KeyguardManager::class.java)
+        val audio = ctx.getSystemService(AudioManager::class.java)
+        val ringer = when (audio?.ringerMode) {
+            AudioManager.RINGER_MODE_SILENT -> RingerDisplay.SILENT
+            AudioManager.RINGER_MODE_VIBRATE -> RingerDisplay.VIBRATE
+            else -> RingerDisplay.NORMAL
+        }
+        IslandState.flow.update { it.copy(deviceLocked = keyguard?.isKeyguardLocked == true, ringerDisplay = ringer) }
     }
     private fun applyConfig() {
         val cfg = Prefs.readConfig(ctx)
@@ -98,6 +120,7 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
         view?.let { if (it.isAttachedToWindow) wm.updateViewLayout(it, p) }
     }
     private fun onScreen(on: Boolean) {
+        updateDeviceStatus()
         IslandState.flow.update { it.copy(screenOn = on) }
         if (on) { owner.resume(); registerBattery(); view?.visibility = android.view.View.VISIBLE }
         else { unregisterBattery(); owner.pause(); view?.visibility = android.view.View.GONE }
@@ -123,6 +146,10 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
     }
     fun stop() {
         unregisterBattery()
+        if (statusReceiversOn) {
+            try { ctx.unregisterReceiver(ringerReceiver) } catch (_: IllegalArgumentException) {}
+            statusReceiversOn = false
+        }
         try { ctx.unregisterReceiver(screenReceiver) } catch (_: IllegalArgumentException) {}
         Prefs.sp(ctx).unregisterOnSharedPreferenceChangeListener(prefsListener)
         view?.let { try { wm.removeView(it) } catch (_: Exception) {} }

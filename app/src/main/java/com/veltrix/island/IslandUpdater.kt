@@ -60,6 +60,20 @@ object IslandUpdater {
         require(update.apkUrl.startsWith("https://github.com/Nexora-Apparel/Veltrix-Dynamic-island-/releases/download/")) {
             "Rejected non-official update URL"
         }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val previousId = prefs.getLong("download_id", -1L)
+        val previousVersion = prefs.getInt("expected_version", -1)
+        if (previousId >= 0L && previousVersion == update.versionCode) {
+            val previousStatus = queryDownloadStatus(context, previousId)
+            if (previousStatus == DownloadManager.STATUS_PENDING ||
+                previousStatus == DownloadManager.STATUS_RUNNING ||
+                previousStatus == DownloadManager.STATUS_PAUSED ||
+                previousStatus == DownloadManager.STATUS_SUCCESSFUL) return previousId
+        }
+        if (previousId >= 0L) {
+            try { context.getSystemService(DownloadManager::class.java).remove(previousId) } catch (_: Exception) {}
+            prefs.edit().remove("download_id").remove("expected_version").apply()
+        }
         val request = DownloadManager.Request(Uri.parse(update.apkUrl))
             .setTitle("Veltrix Island update")
             .setDescription("Downloading ${update.versionName}")
@@ -79,7 +93,11 @@ object IslandUpdater {
         val id = prefs.getLong("download_id", -1L)
         if (id < 0) return false
         val manager = context.getSystemService(DownloadManager::class.java)
-        val downloadedUri = manager.getUriForDownloadedFile(id) ?: return false
+        if (queryDownloadStatus(context, id) != DownloadManager.STATUS_SUCCESSFUL) {
+            throw IllegalStateException("The update download is not complete. Resume or download it again.")
+        }
+        val downloadedUri = manager.getUriForDownloadedFile(id)
+            ?: throw IllegalStateException("Android cannot find the downloaded APK. Download it again.")
         val verifiedApk = File(context.cacheDir, APK_NAME)
         context.contentResolver.openInputStream(downloadedUri)?.use { input ->
             verifiedApk.outputStream().use { output -> input.copyTo(output) }
@@ -167,13 +185,49 @@ object IslandUpdater {
     fun currentDownloadId(context: Context): Long =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("download_id", -1L)
 
-    fun downloadStatus(context: Context): Int? {
-        val id = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("download_id", -1L)
-        if (id < 0) return null
+    private fun queryDownloadStatus(context: Context, id: Long): Int? {
         context.getSystemService(DownloadManager::class.java)
             .query(DownloadManager.Query().setFilterById(id)).use { cursor ->
                 if (!cursor.moveToFirst()) return null
                 return cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
             }
+    }
+
+    fun downloadStatus(context: Context): Int? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val id = prefs.getLong("download_id", -1L)
+        if (id < 0L) return null
+        val status = try { queryDownloadStatus(context, id) } catch (_: Exception) { null }
+        if (status == null) {
+            prefs.edit().remove("download_id").remove("expected_version").apply()
+        }
+        return status
+    }
+
+    fun downloadFailureMessage(context: Context): String? {
+        val id = currentDownloadId(context)
+        if (id < 0L) return null
+        return try {
+            context.getSystemService(DownloadManager::class.java)
+                .query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+                    if (!cursor.moveToFirst()) return null
+                    val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                    if (status != DownloadManager.STATUS_FAILED) return null
+                    val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                    when (reason) {
+                        DownloadManager.ERROR_CANNOT_RESUME -> "Android could not resume the download."
+                        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "Download storage is unavailable."
+                        DownloadManager.ERROR_FILE_ERROR -> "Android could not write the APK file."
+                        DownloadManager.ERROR_HTTP_DATA_ERROR -> "A network data error interrupted the download."
+                        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "Not enough storage space for the update."
+                        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "The update server redirected too many times."
+                        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "The update server returned an unsupported response."
+                        DownloadManager.ERROR_UNKNOWN -> "Android reported an unknown download error."
+                        else -> "Download failed (reason $reason)."
+                    }
+                }
+        } catch (_: Exception) {
+            "Download failed. Check storage and network access, then retry."
+        }
     }
 }

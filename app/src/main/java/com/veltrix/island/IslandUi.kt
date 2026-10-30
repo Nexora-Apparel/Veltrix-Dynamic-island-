@@ -256,12 +256,55 @@ private fun PulseDot(color: Color) {
 }
 @Composable
 private fun StatusIndicators(locked: Boolean, mode: RingerDisplay, modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        if (locked) Text("🔒", fontSize = 10.sp)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        if (locked) LockIndicator()
         when (mode) {
-            RingerDisplay.SILENT -> Text("🔕", fontSize = 12.sp, color = Red)
-            RingerDisplay.VIBRATE -> Text("📳", fontSize = 11.sp, color = Color.White)
-            RingerDisplay.NORMAL -> Text("🔔", fontSize = 11.sp, color = Color.White)
+            RingerDisplay.SILENT -> SolidBellIndicator(Red)
+            RingerDisplay.VIBRATE -> Text("〰", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            RingerDisplay.NORMAL -> SolidBellIndicator(Color.White)
         }
+    }
+}
+
+@Composable
+private fun LockIndicator() {
+    androidx.compose.foundation.Canvas(Modifier.size(12.dp, 14.dp)) {
+        val w = size.width
+        val h = size.height
+        drawArc(
+            color = Color.White,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, h * 0.04f),
+            size = androidx.compose.ui.geometry.Size(w * 0.56f, h * 0.62f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.8.dp.toPx())
+        )
+        drawRoundRect(
+            color = Color.White,
+            topLeft = androidx.compose.ui.geometry.Offset(w * 0.08f, h * 0.43f),
+            size = androidx.compose.ui.geometry.Size(w * 0.84f, h * 0.53f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx())
+        )
+        drawCircle(Color(0xFF050505), radius = 0.8.dp.toPx(), center = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.66f))
+    }
+}
+
+@Composable
+private fun SolidBellIndicator(color: Color) {
+    androidx.compose.foundation.Canvas(Modifier.size(14.dp)) {
+        val w = size.width
+        val h = size.height
+        val bell = androidx.compose.ui.graphics.Path().apply {
+            moveTo(w * 0.5f, h * 0.06f)
+            cubicTo(w * 0.25f, h * 0.06f, w * 0.2f, h * 0.29f, w * 0.2f, h * 0.48f)
+            cubicTo(w * 0.2f, h * 0.67f, w * 0.12f, h * 0.75f, w * 0.08f, h * 0.82f)
+            lineTo(w * 0.92f, h * 0.82f)
+            cubicTo(w * 0.88f, h * 0.75f, w * 0.8f, h * 0.67f, w * 0.8f, h * 0.48f)
+            cubicTo(w * 0.8f, h * 0.29f, w * 0.75f, h * 0.06f, w * 0.5f, h * 0.06f)
+            close()
+        }
+        drawPath(bell, color)
+        drawCircle(color, radius = w * 0.1f, center = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.94f))
     }
 }

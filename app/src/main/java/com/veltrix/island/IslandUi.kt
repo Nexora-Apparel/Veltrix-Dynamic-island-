@@ -40,6 +40,7 @@ fun IslandRoot() {
     val note = s.notification
     val call = s.call
     val media = s.media
+    val activity = s.liveActivities.firstOrNull { it.kind == ActivityKind.TIMER || it.kind == ActivityKind.NAVIGATION || it.kind == ActivityKind.DELIVERY }
     var expanded by remember { mutableStateOf(false) }
     var elapsed by remember { mutableLongStateOf(0L) }
     var callClockTick by remember { mutableIntStateOf(0) }
@@ -83,6 +84,7 @@ fun IslandRoot() {
         call != null -> 92.dp
         media != null -> 106.dp
         note != null -> 78.dp
+        activity != null -> 82.dp
         else -> 48.dp
     } else cfg.heightDp.dp
     val w by animateDpAsState(widthTarget, liquid, label = "w")
@@ -153,6 +155,19 @@ fun IslandRoot() {
                         }
                     }
                 }
+                expanded && activity != null && note == null -> {
+                    Column(Modifier.fillMaxSize().padding(start = 42.dp, end = 14.dp, top = 9.dp, bottom = 9.dp), verticalArrangement = Arrangement.Center) {
+                        Text(activity.kind.name, color = Green, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Text(activity.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (activity.subtitle.isNotBlank()) Text(activity.subtitle, color = Color.LightGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        activity.progress?.let { progress ->
+                            Spacer(Modifier.height(5.dp))
+                            Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(Color(0xFF333333))) {
+                                Box(Modifier.fillMaxWidth().fillMaxHeight().then(Modifier).graphicsLayer { scaleX = progress.coerceIn(0f, 1f); transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }.background(Green, CircleShape))
+                            }
+                        }
+                    }
+                }
                 expanded && note != null -> {
                     Row(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(note.packageName, 30.dp)
@@ -183,6 +198,17 @@ fun IslandRoot() {
                         Spacer(Modifier.width(6.dp))
                         Text(if (call.state == CallState.ACTIVE) formatTime((System.currentTimeMillis() - call.startedAtMillis).coerceAtLeast(0L) / 1000L + callClockTick * 0L) else "CALL", color = Green, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.width(6.dp))
+                        if (dot != null) PulseDot(dot)
+                    }
+                }
+                !expanded && note == null && activity != null -> {
+                    Row(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(when (activity.kind) { ActivityKind.TIMER -> "◷"; ActivityKind.NAVIGATION -> "➤"; else -> "•" }, color = Green, fontSize = 16.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(activity.title, color = Color.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (activity.subtitle.isNotBlank()) Text(activity.subtitle, color = Color.LightGray, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                         if (dot != null) PulseDot(dot)
                     }
                 }

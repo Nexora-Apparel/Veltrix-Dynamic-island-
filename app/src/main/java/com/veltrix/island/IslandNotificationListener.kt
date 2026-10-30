@@ -141,13 +141,21 @@ class IslandNotificationListener : NotificationListenerService() {
                 }
                 controllers[sbn.packageName] = incoming
                 val cb = object : MediaController.Callback() {
-                    override fun onMetadataChanged(metadata: android.media.MediaMetadata?) { publishMedia(sbn.packageName) }
-                    override fun onPlaybackStateChanged(state: PlaybackState?) { publishMedia(sbn.packageName) }
+                    override fun onMetadataChanged(metadata: android.media.MediaMetadata?) {
+                        if (controllers[sbn.packageName] === incoming) publishMedia(sbn.packageName)
+                    }
+                    override fun onPlaybackStateChanged(state: PlaybackState?) {
+                        if (controllers[sbn.packageName] === incoming) publishMedia(sbn.packageName)
+                    }
                     override fun onSessionDestroyed() {
-                        callbacks.remove(sbn.packageName)?.let { oldCallback ->
-                            try { controllers.remove(sbn.packageName)?.unregisterCallback(oldCallback) } catch (_: Exception) {}
+                        // A delayed callback from an old session must never remove its replacement.
+                        if (controllers.remove(sbn.packageName, incoming)) {
+                            callbacks.remove(sbn.packageName, this)
+                            cancelMediaTimeout(sbn.packageName)
+                            mediaLastUpdated.remove(sbn.packageName)
+                            try { incoming.unregisterCallback(this) } catch (_: Exception) {}
+                            selectMediaSession()
                         }
-                        refreshMedia(sbn.packageName)
                     }
                 }
                 callbacks[sbn.packageName] = cb

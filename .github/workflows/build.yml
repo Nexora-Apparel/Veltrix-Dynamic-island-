@@ -91,15 +91,18 @@ jobs:
           fi
       - name: Publish in-app update release
         if: github.ref == 'refs/heads/main' && steps.signing.outputs.configured == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          target_commitish: main
-          name: Veltrix Island ${{ github.run_number }}
-          body: |
-            In-app update for Veltrix Island.
-            versionCode=${{ github.run_number }}
-            signingCertSha256=${{ steps.release_apk.outputs.fingerprint }}
-          files: app/build/outputs/apk/release/VeltrixIsland.apk
-          overwrite_files: true
-          make_latest: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --title "Veltrix Island ${GITHUB_RUN_NUMBER}" --notes "In-app update for Veltrix Island.
+          versionCode=${GITHUB_RUN_NUMBER}
+          signingCertSha256=${{ steps.release_apk.outputs.fingerprint }}"
+          else
+            gh release create latest --target main --title "Veltrix Island ${GITHUB_RUN_NUMBER}" --notes "In-app update for Veltrix Island.
+          versionCode=${GITHUB_RUN_NUMBER}
+          signingCertSha256=${{ steps.release_apk.outputs.fingerprint }}"
+          fi
+          gh release upload latest app/build/outputs/apk/release/VeltrixIsland.apk --clobber

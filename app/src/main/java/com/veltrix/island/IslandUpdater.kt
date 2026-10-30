@@ -182,6 +182,28 @@ object IslandUpdater {
         return true
     }
 
+    /** Clears updater state after Android has installed the downloaded version. */
+    fun reconcileInstalledVersion(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val expected = prefs.getInt("expected_version", -1)
+        if (expected < 0) return false
+        val installed = try {
+            if (Build.VERSION.SDK_INT >= 28)
+                context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
+            else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            }
+        } catch (_: Exception) { return false }
+        if (installed < expected) return false
+        val id = prefs.getLong("download_id", -1L)
+        if (id >= 0L) {
+            try { context.getSystemService(DownloadManager::class.java).remove(id) } catch (_: Exception) {}
+        }
+        prefs.edit().remove("download_id").remove("expected_version").apply()
+        return true
+    }
+
     fun currentDownloadId(context: Context): Long =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("download_id", -1L)
 

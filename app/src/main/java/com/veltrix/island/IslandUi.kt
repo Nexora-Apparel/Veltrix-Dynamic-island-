@@ -101,7 +101,7 @@ fun IslandRoot() {
         ) {
             StatusIndicators(s.deviceLocked, s.ringerDisplay, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))
             when {
-                expanded && media != null && note == null -> {
+                expanded && media != null && call == null && note == null -> {
                     Column(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(media.packageName, 28.dp)
@@ -168,7 +168,7 @@ fun IslandRoot() {
                         }
                     }
                 }
-                !expanded && media != null && note == null -> {
+                !expanded && media != null && call == null && note == null -> {
                     Row(Modifier.fillMaxSize().padding(start = 40.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(media.packageName, 22.dp)
                         Spacer(Modifier.width(8.dp))

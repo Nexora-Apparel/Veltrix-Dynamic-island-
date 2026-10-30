@@ -133,6 +133,7 @@ object IslandTimer {
     @Volatile private var durationMillis: Long = 0L
     @Volatile private var label: String = "Timer"
     private val activityId = "timer:local"
+    private val completionCleanup = Runnable { LiveActivities.remove(activityId) }
     private val ticker = object : Runnable {
         override fun run() {
             val remaining = (endAtMillis - System.currentTimeMillis()).coerceAtLeast(0L)
@@ -140,6 +141,8 @@ object IslandTimer {
             if (remaining <= 0L) {
                 LiveActivities.upsert(LiveActivity(activityId, ActivityKind.TIMER, "$label complete", "Finished", progress = 1f, status = "completed", priority = 80))
                 endAtMillis = 0L
+                handler.removeCallbacks(completionCleanup)
+                handler.postDelayed(completionCleanup, 45_000L)
                 return
             }
             val seconds = (remaining + 999L) / 1000L
@@ -151,6 +154,7 @@ object IslandTimer {
     @Synchronized fun start(durationSeconds: Long, title: String = "Timer") {
         require(durationSeconds in 1L..86400L) { "Timer duration must be between 1 second and 24 hours." }
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(completionCleanup)
         durationMillis = durationSeconds * 1000L
         endAtMillis = System.currentTimeMillis() + durationMillis
         label = title.take(40).ifBlank { "Timer" }
@@ -159,6 +163,7 @@ object IslandTimer {
 
     @Synchronized fun cancel() {
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(completionCleanup)
         endAtMillis = 0L
         LiveActivities.remove(activityId)
     }

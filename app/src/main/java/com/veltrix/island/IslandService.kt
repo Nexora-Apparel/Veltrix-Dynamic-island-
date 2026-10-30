@@ -76,6 +76,7 @@ class IslandService : Service() {
 }
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
+        if (i.action == Intent.ACTION_MY_PACKAGE_REPLACED) IslandUpdater.reconcileInstalledVersion(c)
         if (Settings.canDrawOverlays(c))
             ContextCompat.startForegroundService(c, Intent(c, IslandService::class.java))
     }

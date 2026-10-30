@@ -51,7 +51,15 @@ private fun Setup() {
     var cfg by remember { mutableStateOf(Prefs.readConfig(ctx)) }
     var allowed by remember { mutableStateOf(Prefs.allowed(ctx)) }
     var notificationDuration by remember { mutableIntStateOf(Prefs.notificationDuration(ctx)) }
+    var timerMinutes by remember { mutableStateOf("5") }
+    var timerRunning by remember { mutableStateOf(false) }
     LaunchedEffect(notificationDuration) { Prefs.setNotificationDuration(ctx, notificationDuration) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            timerRunning = IslandTimer.isRunning()
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
     var askDialog by remember { mutableStateOf(!Prefs.asked(ctx) && !listenerOk) }
     val screenW = LocalConfiguration.current.screenWidthDp
 
@@ -132,6 +140,33 @@ private fun Setup() {
             }
         }
 
+        item { Text("Live timer", style = MaterialTheme.typography.titleMedium) }
+        item { Text("Run a countdown directly in the Dynamic Island. The timer continues while the island is collapsed.") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = timerMinutes,
+                    onValueChange = { value -> if (value.length <= 4 && value.all(Char::isDigit)) timerMinutes = value },
+                    label = { Text("Minutes") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Button(
+                    enabled = !timerRunning && (timerMinutes.toLongOrNull() ?: 0L) in 1L..1440L,
+                    onClick = {
+                        val minutes = timerMinutes.toLongOrNull() ?: return@Button
+                        IslandTimer.start(minutes * 60L, "Timer")
+                        timerRunning = true
+                    }
+                ) { Text("Start") }
+                OutlinedButton(
+                    enabled = timerRunning,
+                    onClick = { IslandTimer.cancel(); timerRunning = false }
+                ) { Text("Stop") }
+            }
+            if (timerRunning) Text("Countdown active — it will appear in the island.", style = MaterialTheme.typography.bodySmall)
+        }
+
         item { Text("Apps shown in the island", style = MaterialTheme.typography.titleMedium) }
         item { Text("Choose which apps can send notifications to the island. Media sessions are detected separately for supported music, video, podcast and audiobook apps.") }
         item {
@@ -163,6 +198,7 @@ private fun UpdaterCard() {
     var update by remember { mutableStateOf<IslandUpdateInfo?>(null) }
     var currentVersion by remember { mutableIntStateOf(1) }
     var downloadStatus by remember { mutableIntStateOf(-1) }
+    var downloadId by remember { mutableLongStateOf(-1L) }
 
     LaunchedEffect(Unit) {
         currentVersion = try {
@@ -170,6 +206,26 @@ private fun UpdaterCard() {
             else @Suppress("DEPRECATION") ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionCode
         } catch (_: Exception) { 1 }
         downloadStatus = IslandUpdater.downloadStatus(ctx) ?: -1
+        downloadId = IslandUpdater.currentDownloadId(ctx)
+    }
+
+    LaunchedEffect(downloadId) {
+        if (downloadId >= 0L) {
+            while (true) {
+                val status = IslandUpdater.downloadStatus(ctx) ?: -1
+                downloadStatus = status
+                if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                    message = "Download complete. Tap Install update."
+                    break
+                }
+                if (status == DownloadManager.STATUS_FAILED) {
+                    message = "Download failed. Check your connection and retry."
+                    break
+                }
+                if (status != DownloadManager.STATUS_PENDING && status != DownloadManager.STATUS_RUNNING && status != DownloadManager.STATUS_PAUSED) break
+                kotlinx.coroutines.delay(1200L)
+            }
+        }
     }
 
     Card(Modifier.fillMaxWidth()) {

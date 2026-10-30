@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -100,13 +102,16 @@ fun IslandRoot() {
     Box(Modifier.padding(10.dp)) {
         Box(Modifier.size(w, h)
             .graphicsLayer { scaleX = bounce.value; scaleY = 1f + (bounce.value - 1f) * 0.6f }
-            .clip(RoundedCornerShape(minOf(h / 2, 34.dp)))
-            .background(Color.Black)
+            .shadow(18.dp, RoundedCornerShape(50), clip = false)
+            .clip(RoundedCornerShape(50))
+            .background(Color(0xFF050505))
+            .border(0.7.dp, Color(0xFF242424), RoundedCornerShape(50))
             .clickable(remember { MutableInteractionSource() }, indication = null) { expanded = !expanded }
         ) {
+            StatusIndicators(s.deviceLocked, s.ringerDisplay, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))
             when {
                 expanded && media != null && note == null -> {
-                    Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.Center) {
+                    Column(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppIcon(media.packageName, 28.dp)
                             Spacer(Modifier.width(9.dp))
@@ -149,7 +154,7 @@ fun IslandRoot() {
                     }
                 }
                 expanded && note != null -> {
-                    Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(note.packageName, 30.dp)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
@@ -160,7 +165,7 @@ fun IslandRoot() {
                     }
                 }
                 !expanded && media != null && note == null -> {
-                    Row(Modifier.fillMaxSize().padding(horizontal = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxSize().padding(start = 40.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppIcon(media.packageName, 22.dp)
                         Spacer(Modifier.width(8.dp))
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { GreenWave() }
@@ -248,4 +253,15 @@ private fun PulseDot(color: Color) {
     val t = rememberInfiniteTransition(label = "pulse")
     val a = t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "a")
     Box(Modifier.size(6.dp).graphicsLayer { alpha = a.value; val k = 0.75f + 0.25f * a.value; scaleX = k; scaleY = k }.background(color, CircleShape))
+}
+@Composable
+private fun StatusIndicators(locked: Boolean, mode: RingerDisplay, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        if (locked) Text("🔒", fontSize = 10.sp)
+        when (mode) {
+            RingerDisplay.SILENT -> Text("🔕", fontSize = 12.sp, color = Red)
+            RingerDisplay.VIBRATE -> Text("📳", fontSize = 11.sp, color = Color.White)
+            RingerDisplay.NORMAL -> Text("🔔", fontSize = 11.sp, color = Color.White)
+        }
+    }
 }

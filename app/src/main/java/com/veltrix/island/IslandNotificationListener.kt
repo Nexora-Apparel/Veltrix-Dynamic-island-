@@ -34,6 +34,7 @@ class IslandNotificationListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         if (dismissedByIsland.remove(sbn.key)) return
         IslandState.clearNotification(sbn.key)
+        LiveActivities.remove("navigation:" + sbn.key)
         if (sbn.packageName == "com.whatsapp" && IslandState.flow.value.call?.packageName == "com.whatsapp") {
             IslandState.clearCall()
             CallActions.endCall = null
@@ -43,6 +44,7 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         handleMediaNotification(sbn)
+        handleNavigationNotification(sbn)
         if (!IslandState.flow.value.screenOn) return
         val n = sbn.notification
         if (sbn.packageName == "com.whatsapp" &&
@@ -83,6 +85,39 @@ class IslandNotificationListener : NotificationListenerService() {
         } catch (_: IllegalArgumentException) {
             dismissedByIsland.remove(sbn.key)
         }
+    }
+
+    private fun handleNavigationNotification(sbn: StatusBarNotification) {
+        val n = sbn.notification
+        val extras = n.extras
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
+        val text = (
+            extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+                ?: ""
+        ).trim()
+        val combined = "$title $text"
+        val mapsNavigation = sbn.packageName == "com.google.android.apps.maps" &&
+            sbn.isOngoing &&
+            Regex(
+                "(navigate|navigation|turn left|turn right|continue straight|\bdestination\b|\barrive\b|\bmeters?\b|\bkm\b|\bmiles?\b|\bexit\b)",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(combined)
+        if (n.category != Notification.CATEGORY_NAVIGATION && !mapsNavigation) return
+
+        val routeTitle = title.ifBlank { "Navigation" }.take(90)
+        val routeDetail = text.ifBlank { "Navigation in progress" }.take(140)
+        LiveActivities.upsert(
+            LiveActivity(
+                id = "navigation:" + sbn.key,
+                kind = ActivityKind.NAVIGATION,
+                title = routeTitle,
+                subtitle = routeDetail,
+                status = "active",
+                priority = 70
+            )
+        )
     }
 
     @Suppress("DEPRECATION")

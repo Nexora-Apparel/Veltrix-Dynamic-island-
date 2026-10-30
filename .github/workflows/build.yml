@@ -105,4 +105,45 @@ jobs:
           versionCode=${GITHUB_RUN_NUMBER}
           signingCertSha256=${{ steps.release_apk.outputs.fingerprint }}"
           fi
-          gh release upload latest app/build/outputs/apk/release/VeltrixIsland.apk --clobber
+          APK="app/build/outputs/apk/release/VeltrixIsland.apk"
+          APK_SIZE="$(stat -c%s "$APK")"
+          if [[ "$APK_SIZE" -le 0 ]]; then
+            echo "::error::Release APK is empty."
+            exit 1
+          fi
+
+          # GitHub release uploads can transiently return 5xx responses.
+          uploaded=false
+          for attempt in 1 2 3 4 5; do
+            if gh release upload latest "$APK" --clobber; then
+              uploaded=true
+              break
+            fi
+            if [[ "$attempt" -lt 5 ]]; then
+              delay=$((attempt * 10))
+              echo "Upload attempt $attempt failed; retrying in ${delay}s."
+              sleep "$delay"
+            fi
+          done
+          if [[ "$uploaded" != true ]]; then
+            echo "::error::Release APK upload failed after five attempts."
+            exit 1
+          fi
+
+          # Confirm the release API exposes the exact, non-empty APK asset.
+          verified=false
+          for attempt in 1 2 3 4 5; do
+            asset="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/latest" --jq '.assets[] | select(.name == "VeltrixIsland.apk") | [.state, (.size|tostring)] | @tsv' 2>/dev/null || true)"
+            asset_state="$(printf '%s' "$asset" | cut -f1)"
+            asset_size="$(printf '%s' "$asset" | cut -f2)"
+            if [[ "$asset_state" == "uploaded" && "$asset_size" == "$APK_SIZE" ]]; then
+              verified=true
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$verified" != true ]]; then
+            echo "::error::Release API did not confirm the expected APK asset and size."
+            exit 1
+          fi
+          echo "Verified published VeltrixIsland.apk ($APK_SIZE bytes)."

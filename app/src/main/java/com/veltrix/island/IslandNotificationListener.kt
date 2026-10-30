@@ -79,6 +79,10 @@ class IslandNotificationListener : NotificationListenerService() {
         } catch (_: Exception) { sbn.packageName }
 
         IslandState.showNotification(IslandNotification(sbn.key, label, sbn.packageName, title, text))
+        if (dismissedByIsland.size >= 128) {
+            val oldest = dismissedByIsland.iterator()
+            if (oldest.hasNext()) dismissedByIsland.remove(oldest.next())
+        }
         dismissedByIsland.add(sbn.key)
         try {
             cancelNotification(sbn.key)

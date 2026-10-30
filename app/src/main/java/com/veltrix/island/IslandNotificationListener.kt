@@ -28,7 +28,10 @@ class IslandNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        activeNotifications?.forEach { handleMediaNotification(it) }
+        activeNotifications?.forEach {
+            handleMediaNotification(it)
+            handleNavigationNotification(it)
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -133,17 +136,28 @@ class IslandNotificationListener : NotificationListenerService() {
             return
         }
         try {
-            val controller = MediaController(this, token)
-            val old = controllers.put(sbn.packageName, controller)
-            if (old == null || old.sessionToken != controller.sessionToken) {
-                callbacks.remove(sbn.packageName)?.let { cb -> try { old?.unregisterCallback(cb) } catch (_: Exception) {} }
+            val incoming = MediaController(this, token)
+            val existing = controllers[sbn.packageName]
+            val controller = if (existing != null && existing.sessionToken == incoming.sessionToken) {
+                existing
+            } else {
+                callbacks.remove(sbn.packageName)?.let { cb ->
+                    try { existing?.unregisterCallback(cb) } catch (_: Exception) {}
+                }
+                controllers[sbn.packageName] = incoming
                 val cb = object : MediaController.Callback() {
                     override fun onMetadataChanged(metadata: android.media.MediaMetadata?) { publishMedia(sbn.packageName) }
                     override fun onPlaybackStateChanged(state: PlaybackState?) { publishMedia(sbn.packageName) }
-                    override fun onSessionDestroyed() { refreshMedia(sbn.packageName) }
+                    override fun onSessionDestroyed() {
+                        callbacks.remove(sbn.packageName)?.let { oldCallback ->
+                            try { controllers.remove(sbn.packageName)?.unregisterCallback(oldCallback) } catch (_: Exception) {}
+                        }
+                        refreshMedia(sbn.packageName)
+                    }
                 }
                 callbacks[sbn.packageName] = cb
-                controller.registerCallback(cb)
+                incoming.registerCallback(cb)
+                incoming
             }
             publishMedia(sbn.packageName)
             MediaActions.playPause = { togglePlayback(sbn.packageName) }
@@ -207,6 +221,9 @@ class IslandNotificationListener : NotificationListenerService() {
         callbacks.forEach { (pkg, cb) -> try { controllers[pkg]?.unregisterCallback(cb) } catch (_: Exception) {} }
         callbacks.clear()
         controllers.clear()
+        MediaActions.playPause = null
+        MediaActions.next = null
+        MediaActions.previous = null
         super.onDestroy()
     }
 }

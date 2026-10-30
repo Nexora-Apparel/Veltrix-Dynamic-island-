@@ -47,6 +47,7 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
     private var lp: WindowManager.LayoutParams? = null
     private var batteryOn = false
     private var statusReceiversOn = false
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val prefsListener = OnSharedPreferenceChangeListener { _, _ -> applyConfig() }
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = readBattery(i)
@@ -57,8 +58,14 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
                 Intent.ACTION_SCREEN_ON -> onScreen(true)
                 Intent.ACTION_SCREEN_OFF -> onScreen(false)
                 Intent.ACTION_USER_PRESENT -> {
+                    // USER_PRESENT is the authoritative unlock signal. Do not immediately
+                    // overwrite it with a possibly stale KeyguardManager snapshot.
                     IslandState.flow.update { it.copy(unlockTick = it.unlockTick + 1, deviceLocked = false) }
-                    updateDeviceStatus()
+                    updateRingerStatus()
+                    handler.postDelayed({
+                        val unlocked = ctx.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != true
+                        if (unlocked) IslandState.flow.update { it.copy(deviceLocked = false) }
+                    }, 600L)
                 }
             }
         }
@@ -101,15 +108,19 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
         updateDeviceStatus()
         onScreen(ctx.getSystemService(PowerManager::class.java).isInteractive)
     }
-    private fun updateDeviceStatus() {
-        val keyguard = ctx.getSystemService(KeyguardManager::class.java)
+    private fun updateRingerStatus() {
         val audio = ctx.getSystemService(AudioManager::class.java)
         val ringer = when (audio?.ringerMode) {
             AudioManager.RINGER_MODE_SILENT -> RingerDisplay.SILENT
             AudioManager.RINGER_MODE_VIBRATE -> RingerDisplay.VIBRATE
             else -> RingerDisplay.NORMAL
         }
-        IslandState.flow.update { it.copy(deviceLocked = keyguard?.isKeyguardLocked == true, ringerDisplay = ringer) }
+        IslandState.flow.update { it.copy(ringerDisplay = ringer) }
+    }
+    private fun updateDeviceStatus() {
+        val keyguard = ctx.getSystemService(KeyguardManager::class.java)
+        IslandState.flow.update { it.copy(deviceLocked = keyguard?.isKeyguardLocked == true) }
+        updateRingerStatus()
     }
     private fun applyConfig() {
         val cfg = Prefs.readConfig(ctx)

@@ -133,7 +133,17 @@ private fun Setup() {
         }
 
         item { Text("Apps shown in the island", style = MaterialTheme.typography.titleMedium) }
-        item { Text("Turn on every app whose notifications or app icon you want to see here. Music playback is detected separately when the app exposes an Android media session.") }
+        item { Text("Choose which apps can send notifications to the island. Media sessions are detected separately for supported music, video, podcast and audiobook apps.") }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("\${allowed.size} selected", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = {
+                    val allSelected = apps.all { it.first in allowed }
+                    Prefs.setAllAllowed(ctx, apps.map { it.first }.toSet(), !allSelected)
+                    allowed = Prefs.allowed(ctx)
+                }) { Text(if (apps.all { it.first in allowed }) "Deselect all" else "Select all") }
+            }
+        }
         items(apps, key = { it.first }) { (pkg, label) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(label, Modifier.weight(1f))

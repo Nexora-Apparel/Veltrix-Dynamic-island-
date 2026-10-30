@@ -15,6 +15,17 @@ data class IslandCall(val state: CallState, val number: String? = null, val star
 data class IslandMedia(val packageName: String, val title: String, val artist: String, val playing: Boolean, val elapsedSeconds: Long = 0L)
 enum class CallState { RINGING, ACTIVE }
 enum class RingerDisplay { NORMAL, SILENT, VIBRATE }
+enum class ActivityKind { MEDIA, CALL, TIMER, NAVIGATION, DELIVERY, OTHER }
+data class LiveActivity(
+    val id: String,
+    val kind: ActivityKind,
+    val title: String,
+    val subtitle: String = "",
+    val startedAtMillis: Long = System.currentTimeMillis(),
+    val progress: Float? = null,
+    val status: String = "active",
+    val priority: Int = 0
+)
 data class IslandUiState(
     val level: Int = 100,
     val charging: Boolean = false,
@@ -25,17 +36,35 @@ data class IslandUiState(
     val notification: IslandNotification? = null,
     val call: IslandCall? = null,
     val media: IslandMedia? = null,
+    val liveActivities: List<LiveActivity> = emptyList(),
     val notificationDurationSeconds: Int = 10,
     val config: IslandConfig = IslandConfig()
 )
 object IslandState {
     val flow = MutableStateFlow(IslandUiState())
-    fun showNotification(n: IslandNotification) = flow.update { it.copy(notification = n) }
-    fun clearNotification(key: String) =
+    fun showNotification(n: IslandNotification) {
+        flow.update { it.copy(notification = n) }
+        LiveActivities.upsert(LiveActivity("notification:" + n.key, ActivityKind.OTHER, n.title, n.text, priority = 10))
+    }
+    fun clearNotification(key: String) {
         flow.update { if (it.notification?.key == key) it.copy(notification = null) else it }
-    fun showCall(call: IslandCall) = flow.update { it.copy(call = call, notification = null) }
-    fun clearCall() = flow.update { it.copy(call = null) }
-    fun showMedia(media: IslandMedia?) = flow.update { it.copy(media = media) }
+        LiveActivities.remove("notification:" + key)
+    }
+    fun showCall(call: IslandCall) {
+        flow.update { it.copy(call = call, notification = null) }
+        LiveActivities.upsert(LiveActivity("call:" + (call.packageName ?: "phone"), ActivityKind.CALL,
+            call.number ?: "Phone call", status = call.state.name.lowercase(), startedAtMillis = call.startedAtMillis, priority = 100))
+    }
+    fun clearCall() {
+        flow.update { it.copy(call = null) }
+        LiveActivities.removeByPrefix("call:")
+    }
+    fun showMedia(media: IslandMedia?) {
+        flow.update { it.copy(media = media) }
+        if (media == null) LiveActivities.removeByPrefix("media:")
+        else LiveActivities.upsert(LiveActivity("media:" + media.packageName, ActivityKind.MEDIA,
+            media.title, media.artist, status = if (media.playing) "playing" else "paused", priority = 50))
+    }
 }
 object CallActions { @Volatile var endCall: (() -> Unit)? = null }
 object MediaActions {
@@ -67,4 +96,31 @@ object Prefs {
     }
     fun asked(c: Context) = sp(c).getBoolean("asked", false)
     fun markAsked(c: Context) = sp(c).edit().putBoolean("asked", true).apply()
+}
+/** In-memory normalized registry shared by media, calls, timers and navigation producers. */
+object LiveActivities {
+    private val entries = LinkedHashMap<String, LiveActivity>()
+    @Synchronized fun upsert(activity: LiveActivity) {
+        entries[activity.id] = activity
+        publish()
+    }
+    @Synchronized fun remove(id: String) {
+        entries.remove(id)
+        publish()
+    }
+    @Synchronized fun removeByPrefix(prefix: String) {
+        entries.keys.filter { it.startsWith(prefix) }.forEach(entries::remove)
+        publish()
+    }
+    @Synchronized fun clear() {
+        entries.clear()
+        publish()
+    }
+    @Synchronized fun snapshot(): List<LiveActivity> = entries.values.sortedWith(
+        compareByDescending<LiveActivity> { it.priority }.thenBy { it.startedAtMillis }
+    )
+    private fun publish() {
+        val ordered = snapshot()
+        IslandState.flow.update { it.copy(liveActivities = ordered) }
+    }
 }

@@ -34,6 +34,13 @@ class IslandService : Service() {
         }
     }
     private var phoneReceiverRegistered = false
+    private var unlockReceiverRegistered = false
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_USER_PRESENT) return
+            IslandState.flow.update { it.copy(unlockTick = it.unlockTick + 1, deviceLocked = false) }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -49,6 +56,15 @@ class IslandService : Service() {
         IslandHost.fgActive = true
         if (!IslandHost.accessibilityActive) IslandHost.start(this, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
         registerPhoneReceiverIfPermitted()
+        registerUnlockReceiver()
+    }
+
+    private fun registerUnlockReceiver() {
+        if (unlockReceiverRegistered) return
+        try {
+            ContextCompat.registerReceiver(this, unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_EXPORTED)
+            unlockReceiverRegistered = true
+        } catch (_: Exception) { }
     }
 
     private fun registerPhoneReceiverIfPermitted() {
@@ -61,10 +77,15 @@ class IslandService : Service() {
 
     override fun onStartCommand(i: Intent?, f: Int, id: Int): Int {
         registerPhoneReceiverIfPermitted()
+        registerUnlockReceiver()
         return START_STICKY
     }
     override fun onBind(i: Intent?): IBinder? = null
     override fun onDestroy() {
+        if (unlockReceiverRegistered) {
+            try { unregisterReceiver(unlockReceiver) } catch (_: IllegalArgumentException) { }
+            unlockReceiverRegistered = false
+        }
         if (phoneReceiverRegistered) {
             try { unregisterReceiver(phoneStateReceiver) } catch (_: IllegalArgumentException) { }
             phoneReceiverRegistered = false

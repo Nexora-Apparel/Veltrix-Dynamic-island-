@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 
 private val Red = Color(0xFFFF3B30)
 private val Green = Color(0xFF30D158)
@@ -114,11 +115,13 @@ fun IslandRoot() {
             unlockScaleY.snapTo(1.16f)
             unlockFlash.snapTo(0.72f)
             // iPhone-inspired unlock: compress, stretch, rebound and settle.
-            launch { unlockScaleX.animateTo(1.08f, spring(dampingRatio = 0.48f, stiffness = 620f)) }
-            launch { unlockScaleY.animateTo(0.94f, spring(dampingRatio = 0.48f, stiffness = 620f)) }
-            launch { unlockFlash.animateTo(0f, tween(620, easing = FastOutSlowInEasing)) }
-            bounce.animateTo(1.045f, spring(dampingRatio = 0.52f, stiffness = 560f))
-            unlockLift.animateTo(0f, spring(dampingRatio = 0.58f, stiffness = 500f))
+            coroutineScope {
+                launch { unlockScaleX.animateTo(1.08f, spring(dampingRatio = 0.48f, stiffness = 620f)) }
+                launch { unlockScaleY.animateTo(0.94f, spring(dampingRatio = 0.48f, stiffness = 620f)) }
+                launch { unlockFlash.animateTo(0f, tween(620, easing = FastOutSlowInEasing)) }
+                launch { bounce.animateTo(1.045f, spring(dampingRatio = 0.52f, stiffness = 560f)) }
+                launch { unlockLift.animateTo(0f, spring(dampingRatio = 0.58f, stiffness = 500f)) }
+            }
             unlockScaleX.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
             unlockScaleY.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
             bounce.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 420f))

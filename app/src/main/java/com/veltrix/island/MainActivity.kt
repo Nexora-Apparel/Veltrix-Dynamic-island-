@@ -82,6 +82,14 @@ private fun Setup() {
             .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
             .distinctBy { it.first }.sortedBy { it.second.lowercase() }
     }
+    // First install: enable notification forwarding for installed launcher apps.
+    // Users can still opt individual apps out below.
+    LaunchedEffect(apps) {
+        if (!Prefs.hasAllowedSetting(ctx)) {
+            Prefs.setAllAllowed(ctx, apps.map { it.first }.toSet(), true)
+            allowed = Prefs.allowed(ctx)
+        }
+    }
 
     if (askDialog) AlertDialog(
         onDismissRequest = { askDialog = false; Prefs.markAsked(ctx) },

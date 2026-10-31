@@ -83,8 +83,23 @@ fun IslandRoot() {
     val bounce = remember { Animatable(1f) }
     val unlockLift = remember { Animatable(0f) }
     var unlockGlow by remember { mutableStateOf(false) }
+    val chargePulse = remember { Animatable(1f) }
+    var chargeGlow by remember { mutableStateOf(false) }
+    LaunchedEffect(s.charging) {
+        if (s.charging) {
+            chargeGlow = true
+            chargePulse.snapTo(0.72f)
+            chargePulse.animateTo(1.22f, spring(dampingRatio = 0.42f, stiffness = 420f))
+            chargePulse.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 360f))
+            delay(700L)
+            chargeGlow = false
+        } else {
+            chargeGlow = false
+            chargePulse.snapTo(1f)
+        }
+    }
     val islandBorder by animateColorAsState(
-        if (unlockGlow) Color(0xFF30D158) else Color(0xFF242424),
+        if (unlockGlow || chargeGlow) Color(0xFF30D158) else Color(0xFF242424),
         tween(260), label = "unlockBorder"
     )
     LaunchedEffect(s.unlockTick) {
@@ -111,13 +126,13 @@ fun IslandRoot() {
                 scaleY = bounce.value
                 translationY = unlockLift.value * density
             }
-            .shadow(if (unlockGlow) 24.dp else 18.dp, RoundedCornerShape(50), clip = false)
+             .shadow(if (unlockGlow || chargeGlow) 24.dp else 18.dp, RoundedCornerShape(50), clip = false)
             .clip(RoundedCornerShape(50))
             .background(Color(0xFF050505))
             .border(if (unlockGlow) 1.1.dp else 0.7.dp, islandBorder, RoundedCornerShape(50))
             .clickable(remember { MutableInteractionSource() }, indication = null) { expanded = !expanded }
         ) {
-            StatusIndicators(s.deviceLocked, s.ringerDisplay, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))
+            StatusIndicators(s.deviceLocked, s.ringerDisplay, s.charging, chargePulse.value, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))
             when {
                 expanded && media != null && call == null && note == null -> {
                     Column(Modifier.fillMaxSize().padding(start = 42.dp, end = 12.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.Center) {
@@ -288,9 +303,10 @@ private fun PulseDot(color: Color) {
     Box(Modifier.size(6.dp).graphicsLayer { alpha = a.value; val k = 0.75f + 0.25f * a.value; scaleX = k; scaleY = k }.background(color, CircleShape))
 }
 @Composable
-private fun StatusIndicators(locked: Boolean, mode: RingerDisplay, modifier: Modifier = Modifier) {
+private fun StatusIndicators(locked: Boolean, mode: RingerDisplay, charging: Boolean, chargeScale: Float, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         if (locked) LockIndicator()
+        if (charging) Text("⚡", fontSize = 12.sp, color = Green, fontWeight = FontWeight.Bold, modifier = Modifier.graphicsLayer { scaleX = chargeScale; scaleY = chargeScale })
         when (mode) {
             RingerDisplay.SILENT -> SolidBellIndicator(Red)
             RingerDisplay.VIBRATE -> Text("〰", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold)

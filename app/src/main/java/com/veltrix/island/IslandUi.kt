@@ -71,16 +71,22 @@ fun IslandRoot() {
             elapsed++
         }
     }
+    var unlockReveal by remember { mutableStateOf(false) }
     val liquid = spring<Dp>(dampingRatio = 0.58f, stiffness = Spring.StiffnessLow)
-    val widthTarget = if (expanded) 320.dp else cfg.widthDp.dp
+    // Unlock briefly morphs the compact island into a wider capsule, then returns it to rest.
+    val widthTarget = when {
+        expanded -> 320.dp
+        unlockReveal -> 218.dp
+        else -> cfg.widthDp.dp
+    }
     val heightTarget = if (expanded) when {
         call != null -> 92.dp
         media != null -> 106.dp
         note != null -> 78.dp
         activity != null -> 82.dp
         else -> 48.dp
-    } else cfg.heightDp.dp
-    val w by animateDpAsState(widthTarget, liquid, label = "w")
+    } else if (unlockReveal) 54.dp else cfg.heightDp.dp
+    val w by animateDpAsState(widthTarget, spring(dampingRatio = 0.62f, stiffness = 460f), label = "w")
     val h by animateDpAsState(heightTarget, liquid, label = "h")
     val bounce = remember { Animatable(1f) }
     val unlockLift = remember { Animatable(0f) }
@@ -110,7 +116,8 @@ fun IslandRoot() {
     LaunchedEffect(s.unlockTick) {
         if (s.unlockTick > 0) {
             unlockGlow = true
-            bounce.snapTo(0.94f)
+            unlockReveal = true
+            bounce.snapTo(0.97f)
             unlockLift.snapTo(-5f)
             unlockScaleX.snapTo(0.82f)
             unlockScaleY.snapTo(1.16f)
@@ -126,7 +133,9 @@ fun IslandRoot() {
             unlockScaleX.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
             unlockScaleY.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
             bounce.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 420f))
-            delay(180L)
+            delay(260L)
+            unlockReveal = false
+            delay(220L)
             unlockGlow = false
         }
     }

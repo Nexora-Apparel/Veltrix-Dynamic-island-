@@ -57,16 +57,6 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
             when (i.action) {
                 Intent.ACTION_SCREEN_ON -> onScreen(true)
                 Intent.ACTION_SCREEN_OFF -> onScreen(false)
-                Intent.ACTION_USER_PRESENT -> {
-                    // USER_PRESENT is the authoritative unlock signal. Do not immediately
-                    // overwrite it with a possibly stale KeyguardManager snapshot.
-                    IslandState.flow.update { it.copy(unlockTick = it.unlockTick + 1, deviceLocked = false) }
-                    updateRingerStatus()
-                    handler.postDelayed({
-                        val unlocked = ctx.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked != true
-                        if (unlocked) IslandState.flow.update { it.copy(deviceLocked = false) }
-                    }, 600L)
-                }
             }
         }
     }
@@ -101,7 +91,7 @@ class IslandRuntime(private val ctx: Context, private val type: Int) {
         applyConfig()
         Prefs.sp(ctx).registerOnSharedPreferenceChangeListener(prefsListener)
         ContextCompat.registerReceiver(ctx, screenReceiver, IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)
         ContextCompat.registerReceiver(ctx, ringerReceiver, IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
         statusReceiversOn = true

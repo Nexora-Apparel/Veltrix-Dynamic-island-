@@ -82,6 +82,9 @@ fun IslandRoot() {
     val h by animateDpAsState(heightTarget, liquid, label = "h")
     val bounce = remember { Animatable(1f) }
     val unlockLift = remember { Animatable(0f) }
+    val unlockScaleX = remember { Animatable(1f) }
+    val unlockScaleY = remember { Animatable(1f) }
+    val unlockFlash = remember { Animatable(0f) }
     var unlockGlow by remember { mutableStateOf(false) }
     val chargePulse = remember { Animatable(1f) }
     var chargeGlow by remember { mutableStateOf(false) }
@@ -105,12 +108,21 @@ fun IslandRoot() {
     LaunchedEffect(s.unlockTick) {
         if (s.unlockTick > 0) {
             unlockGlow = true
-            bounce.snapTo(0.88f)
-            unlockLift.snapTo(-8f)
-            bounce.animateTo(1.07f, spring(dampingRatio = 0.48f, stiffness = 520f))
-            unlockLift.animateTo(0f, spring(dampingRatio = 0.62f, stiffness = 420f))
-            bounce.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 360f))
-            delay(520L)
+            bounce.snapTo(0.94f)
+            unlockLift.snapTo(-5f)
+            unlockScaleX.snapTo(0.82f)
+            unlockScaleY.snapTo(1.16f)
+            unlockFlash.snapTo(0.72f)
+            // iPhone-inspired unlock: compress, stretch, rebound and settle.
+            launch { unlockScaleX.animateTo(1.08f, spring(dampingRatio = 0.48f, stiffness = 620f)) }
+            launch { unlockScaleY.animateTo(0.94f, spring(dampingRatio = 0.48f, stiffness = 620f)) }
+            launch { unlockFlash.animateTo(0f, tween(620, easing = FastOutSlowInEasing)) }
+            bounce.animateTo(1.045f, spring(dampingRatio = 0.52f, stiffness = 560f))
+            unlockLift.animateTo(0f, spring(dampingRatio = 0.58f, stiffness = 500f))
+            unlockScaleX.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
+            unlockScaleY.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
+            bounce.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 420f))
+            delay(180L)
             unlockGlow = false
         }
     }
@@ -120,10 +132,22 @@ fun IslandRoot() {
         else -> null
     }
     Box(Modifier.padding(10.dp)) {
+        // Short-lived halo gives the unlock transition a soft luminous edge.
+        Box(
+            Modifier.size(w + 12.dp, h + 12.dp)
+                .align(Alignment.Center)
+                .graphicsLayer {
+                    alpha = unlockFlash.value
+                    scaleX = 0.94f + unlockFlash.value * 0.08f
+                    scaleY = 0.94f + unlockFlash.value * 0.08f
+                }
+                .clip(RoundedCornerShape(50))
+                .background(Green.copy(alpha = 0.32f))
+        )
         Box(Modifier.size(w, h)
             .graphicsLayer {
-                scaleX = bounce.value
-                scaleY = bounce.value
+                scaleX = bounce.value * unlockScaleX.value
+                scaleY = bounce.value * unlockScaleY.value
                 translationY = unlockLift.value * density
             }
              .shadow(if (unlockGlow || chargeGlow) 24.dp else 18.dp, RoundedCornerShape(50), clip = false)

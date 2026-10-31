@@ -79,10 +79,22 @@ fun IslandRoot() {
     val w by animateDpAsState(widthTarget, liquid, label = "w")
     val h by animateDpAsState(heightTarget, liquid, label = "h")
     val bounce = remember { Animatable(1f) }
+    val unlockLift = remember { Animatable(0f) }
+    var unlockGlow by remember { mutableStateOf(false) }
+    val islandBorder by animateColorAsState(
+        if (unlockGlow) Color(0xFF30D158) else Color(0xFF242424),
+        tween(260), label = "unlockBorder"
+    )
     LaunchedEffect(s.unlockTick) {
         if (s.unlockTick > 0) {
-            bounce.animateTo(1.2f, tween(100, easing = FastOutSlowInEasing))
-            bounce.animateTo(1f, spring(dampingRatio = 0.3f, stiffness = 320f))
+            unlockGlow = true
+            bounce.snapTo(0.88f)
+            unlockLift.snapTo(-8f)
+            bounce.animateTo(1.07f, spring(dampingRatio = 0.48f, stiffness = 520f))
+            unlockLift.animateTo(0f, spring(dampingRatio = 0.62f, stiffness = 420f))
+            bounce.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 360f))
+            delay(520L)
+            unlockGlow = false
         }
     }
     val dot = when {
@@ -92,11 +104,15 @@ fun IslandRoot() {
     }
     Box(Modifier.padding(10.dp)) {
         Box(Modifier.size(w, h)
-            .graphicsLayer { scaleX = bounce.value; scaleY = 1f + (bounce.value - 1f) * 0.6f }
-            .shadow(18.dp, RoundedCornerShape(50), clip = false)
+            .graphicsLayer {
+                scaleX = bounce.value
+                scaleY = bounce.value
+                translationY = unlockLift.value * density
+            }
+            .shadow(if (unlockGlow) 24.dp else 18.dp, RoundedCornerShape(50), clip = false)
             .clip(RoundedCornerShape(50))
             .background(Color(0xFF050505))
-            .border(0.7.dp, Color(0xFF242424), RoundedCornerShape(50))
+            .border(if (unlockGlow) 1.1.dp else 0.7.dp, islandBorder, RoundedCornerShape(50))
             .clickable(remember { MutableInteractionSource() }, indication = null) { expanded = !expanded }
         ) {
             StatusIndicators(s.deviceLocked, s.ringerDisplay, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))

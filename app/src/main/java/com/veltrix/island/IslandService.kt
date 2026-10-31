@@ -11,6 +11,7 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.update
 
 class IslandService : Service() {
     private val phoneStateReceiver = object : BroadcastReceiver() {

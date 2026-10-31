@@ -2,6 +2,7 @@ package com.veltrix.island
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -36,6 +37,7 @@ private val Green = Color(0xFF30D158)
 fun IslandRoot() {
     val s by IslandState.flow.collectAsState()
     if (!s.screenOn) return
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
     val cfg = s.config
     val note = s.notification
     val call = s.call

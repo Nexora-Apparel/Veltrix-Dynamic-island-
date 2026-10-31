@@ -80,6 +80,7 @@ object Prefs {
     fun writeConfig(c: Context, cfg: IslandConfig) = sp(c).edit()
         .putInt("x", cfg.offsetXdp).putInt("y", cfg.offsetYdp)
         .putInt("w", cfg.widthDp).putInt("h", cfg.heightDp).apply()
+    fun hasAllowedSetting(c: Context): Boolean = sp(c).contains("allowed")
     fun allowed(c: Context): Set<String> = HashSet(sp(c).getStringSet("allowed", emptySet()) ?: emptySet())
     fun setAllowed(c: Context, pkg: String, on: Boolean) {
         val s = allowed(c).toMutableSet(); if (on) s.add(pkg) else s.remove(pkg)

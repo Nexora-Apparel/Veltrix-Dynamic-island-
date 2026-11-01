@@ -22,6 +22,11 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
+import android.graphics.Paint
+import android.graphics.Path as AndroidPath
+import android.graphics.Color as AndroidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,11 +80,11 @@ fun IslandRoot() {
     val liquid = spring<Dp>(dampingRatio = 0.58f, stiffness = Spring.StiffnessLow)
     // Unlock briefly morphs the compact island into a wider capsule, then returns it to rest.
     val widthTarget = when {
+        unlockReveal -> 132.dp
         expanded -> 320.dp
-        unlockReveal -> 218.dp
         else -> cfg.widthDp.dp
     }
-    val heightTarget = if (expanded) when {
+    val heightTarget = if (unlockReveal) 132.dp else if (expanded) when {
         call != null -> 92.dp
         media != null -> 106.dp
         note != null -> 78.dp
@@ -133,7 +138,7 @@ fun IslandRoot() {
             unlockScaleX.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
             unlockScaleY.animateTo(1f, spring(dampingRatio = 0.42f, stiffness = 420f))
             bounce.animateTo(1f, spring(dampingRatio = 0.5f, stiffness = 420f))
-            delay(260L)
+            delay(1_200L)
             unlockReveal = false
             delay(220L)
             unlockGlow = false
@@ -169,6 +174,9 @@ fun IslandRoot() {
             .border(if (unlockGlow) 1.1.dp else 0.7.dp, islandBorder, RoundedCornerShape(50))
             .clickable(remember { MutableInteractionSource() }, indication = null) { expanded = !expanded }
         ) {
+            if (unlockReveal) {
+                UnlockChainCircle(Modifier.fillMaxSize())
+            } else {
             StatusIndicators(s.deviceLocked, s.ringerDisplay, s.charging, chargePulse.value, Modifier.align(Alignment.CenterStart).padding(start = 9.dp))
             when {
                 expanded && media != null && call == null && note == null -> {
@@ -282,7 +290,54 @@ fun IslandRoot() {
                 expanded -> Text("${s.level}%${if (s.charging) "  ⚡" else ""}", Modifier.align(Alignment.Center), color = Color.White, fontSize = 15.sp)
                 else -> if (dot != null) Box(Modifier.fillMaxSize().padding(end = 12.dp), Alignment.CenterEnd) { PulseDot(dot) }
             }
+            }
         }
+    }
+}
+
+@Composable
+private fun UnlockChainCircle(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "unlock-chain")
+    val angle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1_800, easing = LinearEasing), RepeatMode.Restart),
+        label = "unlock-chain-rotation"
+    )
+    androidx.compose.foundation.Canvas(modifier) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val radius = size.minDimension * 0.355f
+        val linkW = size.minDimension * 0.105f
+        val linkH = size.minDimension * 0.205f
+        rotate(angle, pivot = androidx.compose.ui.geometry.Offset(cx, cy)) {
+            repeat(12) { index ->
+                val theta = Math.toRadians(index * 30.0)
+                val x = cx + kotlin.math.cos(theta).toFloat() * radius
+                val y = cy + kotlin.math.sin(theta).toFloat() * radius
+                rotate(index * 30f + 90f, pivot = androidx.compose.ui.geometry.Offset(x, y)) {
+                    drawOval(
+                        color = Color.White,
+                        topLeft = androidx.compose.ui.geometry.Offset(x - linkW / 2f, y - linkH / 2f),
+                        size = androidx.compose.ui.geometry.Size(linkW, linkH),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = size.minDimension * 0.018f)
+                    )
+                }
+            }
+        }
+        val textPath = AndroidPath().apply {
+            addCircle(cx, cy, size.minDimension * 0.265f, AndroidPath.Direction.CW)
+        }
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.WHITE
+            textSize = size.minDimension * 0.082f
+            textAlign = Paint.Align.CENTER
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+        }
+        drawContext.canvas.nativeCanvas.save()
+        drawContext.canvas.nativeCanvas.rotate(angle, cx, cy)
+        drawContext.canvas.nativeCanvas.drawTextOnPath("UNLOCKED", textPath, 0f, 0f, paint)
+        drawContext.canvas.nativeCanvas.restore()
     }
 }
 
